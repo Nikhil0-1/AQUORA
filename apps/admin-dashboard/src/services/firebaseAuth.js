@@ -11,15 +11,15 @@ class FirebaseAuthService {
     currentUser = null;
     listeners = [];
     constructor() {
-        this.apiKey = import.meta.env?.VITE_FIREBASE_API_KEY || '';
-        this.authDomain = import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN || '';
-        this.projectId = import.meta.env?.VITE_FIREBASE_PROJECT_ID || '';
+        this.apiKey = import.meta.env?.VITE_FIREBASE_API_KEY || 'AIzaSyC7JLagW2qQM8ORNrJ3R6cYWoV7SfoUP04';
+        this.authDomain = import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN || 'aquora-e7eb0.firebaseapp.com';
+        this.projectId = import.meta.env?.VITE_FIREBASE_PROJECT_ID || 'aquora-e7eb0';
         // Restore cached session from localStorage if valid
         this.restoreSession();
     }
     isConfigured() {
         return Boolean(this.apiKey &&
-            this.apiKey !== 'YOUR_FIREBASE_API_KEY' &&
+            !this.apiKey.startsWith('YOUR_') &&
             !this.apiKey.startsWith('AIzaSy_placeholder'));
     }
     restoreSession() {

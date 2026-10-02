@@ -24,6 +24,7 @@ import { AdminProductManager } from './components/AdminProductManager';
 import { AdminInventoryManager } from './components/AdminInventoryManager';
 import { AdminOrdersView } from './components/AdminOrdersView';
 import { AdminAuthModal } from './components/AdminAuthModal';
+import { AdminLoginView } from './components/AdminLoginView';
 import { firebaseAuth, FirebaseUser } from './services/firebaseAuth';
 
 export default function App() {
@@ -91,6 +92,11 @@ export default function App() {
       alert('Failed to save calibration: ' + err.message);
     }
   };
+
+  // Admin Auth Guard: Public web has no auth, Admin requires Firebase login
+  if (!currentUser) {
+    return <AdminLoginView onLoginSuccess={(u) => setCurrentUser(u)} />;
+  }
 
   const currentMachine = machines[0];
 
@@ -222,7 +228,25 @@ export default function App() {
             >
               <RefreshCw className="w-4 h-4" />
             </button>
-            <AdminAuthModal onAuthChange={(u) => setCurrentUser(u)} />
+            <div className="flex items-center gap-3 bg-slate-900 border border-slate-800 px-3.5 py-1.5 rounded-xl">
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+              <div className="text-left text-xs">
+                <span className="text-white font-semibold block">{currentUser.email}</span>
+                <span className="text-[10px] font-mono font-bold text-cyan-400 bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-800/40">
+                  {currentUser.role}
+                </span>
+              </div>
+              <button
+                onClick={async () => {
+                  await firebaseAuth.signOut();
+                  setCurrentUser(null);
+                }}
+                className="text-slate-400 hover:text-rose-400 p-1.5 hover:bg-slate-800 rounded-lg transition-colors ml-1 text-xs font-semibold"
+                title="Sign out of Admin Panel"
+              >
+                Sign Out
+              </button>
+            </div>
           </div>
         </header>
 
