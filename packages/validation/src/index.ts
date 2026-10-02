@@ -29,16 +29,38 @@ export const CreateProductSchema = z.object({
 
 export const UpdateProductSchema = CreateProductSchema.partial();
 
+export const CreateVariantSchema = z.object({
+  product_id: z.string().min(1),
+  volume_ml: z.number().positive(),
+  price: z.number().nonnegative(),
+  channel_id: z.number().int().min(1).max(5).optional().default(1),
+  available_quantity: z.number().int().nonnegative().default(100),
+  is_available: z.boolean().default(true),
+  display_order: z.number().int().default(0),
+});
+
+export const UpdateVariantSchema = CreateVariantSchema.partial();
+
+export const StockAdjustSchema = z.object({
+  machine_code: z.string().default('AQ-DM-001'),
+  channel_number: z.number().int().min(1).max(5),
+  action: z.enum(['ADD', 'REDUCE', 'SET']),
+  amount_ml: z.number().nonnegative(),
+  reason: z.string().min(1).default('Manual Admin Adjustment'),
+});
+
 export const CreateOrderSchema = z.object({
   terminal_code: z.string().min(2).optional().default('AQ-PT-001'),
   machine_code: z.string().min(2).default('AQ-DM-001'),
+  source: z.enum(['SYSTEM_1_TERMINAL', 'PUBLIC_WEB']).optional().default('SYSTEM_1_TERMINAL'),
   customer_name: z.string().min(1).optional(),
   customer_phone: z.string().min(5).optional(),
   customer_email: z.string().email().optional(),
   items: z.array(
     z.object({
       product_id: z.string().min(1),
-      quantity: z.number().int().positive().max(5).default(1),
+      variant_id: z.string().optional(),
+      quantity: z.number().int().positive().max(10).default(1),
       volume_ml: z.number().positive().default(100),
       channel_id: z.number().int().min(1).max(5).optional(),
       unit_price: z.number().positive().optional(),

@@ -23,29 +23,27 @@ export function CheckoutPage() {
     );
   }
 
-  const handleCheckout = async () => {
-    if (!machineId) {
-      setError("Please connect to a machine first.");
-      return;
-    }
+  const effectiveMachineId = machineId || 'AQ-DM-001';
 
+  const handleCheckout = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      // 1. Create Order
+      // 1. Create Order with server-authoritative machine assignment and source tracking
       const order = await api.createOrder({
-        machine_code: machineId,
+        machine_code: effectiveMachineId,
+        source: 'PUBLIC_WEB',
         items: items.map(i => ({ product_id: i.product.id, quantity: i.quantity, volume_ml: i.volume_ml || 250 }))
       });
 
-      // 2. Process Payment (Mock)
+      // 2. Process Payment (Mock or Gateway)
       const paymentResult = await api.processMockPayment({ order_id: order.id });
 
       if (paymentResult.success && paymentResult.order) {
         // Clear cart
         clearCart();
-        // Redirect to success page
+        // Redirect to success / tracking page
         navigate(`/order/${order.id}`);
       } else {
         setError("Payment failed. Please try again.");
@@ -120,11 +118,10 @@ export function CheckoutPage() {
                 <span className="text-cyan-500 font-bold font-mono text-2xl">₹{total.toFixed(2)}</span>
               </div>
 
-              {!machineId && (
-                <div className="mb-4 p-4 bg-cyan-500/10 border border-cyan-500/20 rounded-xl text-cyan-500 text-sm">
-                  Please connect to a machine using the selector in the navbar to proceed.
-                </div>
-              )}
+              <div className="mb-4 p-4 bg-cyan-500/10 border border-cyan-500/20 rounded-xl text-cyan-400 text-xs flex items-center justify-between">
+                <span>Dispensing Station:</span>
+                <span className="font-mono font-bold text-white">{effectiveMachineId} (Online Station)</span>
+              </div>
 
               {error && (
                 <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-500 text-sm">
@@ -134,7 +131,7 @@ export function CheckoutPage() {
 
               <button
                 onClick={handleCheckout}
-                disabled={!machineId || loading}
+                disabled={loading}
                 className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 text-black font-bold py-4 rounded-xl shadow-lg hover:shadow-cyan-500/40 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
               >
                 {loading ? (

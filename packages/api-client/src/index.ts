@@ -57,6 +57,7 @@ export class AquoraApiClient {
 
   async createOrder(payload: {
     machine_code: string;
+    source?: 'SYSTEM_1_TERMINAL' | 'PUBLIC_WEB';
     customer_name?: string;
     customer_phone?: string;
     customer_email?: string;
@@ -174,6 +175,10 @@ export class AquoraApiClient {
     });
   }
 
+  async getAdminProducts(includeArchived: boolean = true): Promise<Product[]> {
+    return this.request<Product[]>(`/api/v1/admin/products?include_archived=${includeArchived}`);
+  }
+
   async createProduct(product: Partial<Product>): Promise<Product> {
     return this.request<Product>('/api/v1/admin/products', {
       method: 'POST',
@@ -188,9 +193,67 @@ export class AquoraApiClient {
     });
   }
 
-  async deleteProduct(id: string): Promise<{ success: boolean }> {
-    return this.request(`/api/v1/admin/products/${id}`, {
+  async deleteProduct(id: string, permanent: boolean = false): Promise<{ success: boolean; archived?: boolean }> {
+    return this.request(`/api/v1/admin/products/${id}?permanent=${permanent}`, {
       method: 'DELETE',
+    });
+  }
+
+  async toggleProductAvailability(id: string): Promise<Product> {
+    return this.request<Product>(`/api/v1/admin/products/${id}/toggle`, {
+      method: 'PATCH',
+    });
+  }
+
+  async createVariant(productId: string, variant: any): Promise<any> {
+    return this.request(`/api/v1/admin/products/${productId}/variants`, {
+      method: 'POST',
+      body: JSON.stringify(variant),
+    });
+  }
+
+  async updateVariant(productId: string, variantId: string, variant: any): Promise<any> {
+    return this.request(`/api/v1/admin/products/${productId}/variants/${variantId}`, {
+      method: 'PUT',
+      body: JSON.stringify(variant),
+    });
+  }
+
+  async deleteVariant(productId: string, variantId: string): Promise<{ success: boolean }> {
+    return this.request(`/api/v1/admin/products/${productId}/variants/${variantId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async adjustStock(payload: {
+    machine_code?: string;
+    channel_number: number;
+    action: 'ADD' | 'REDUCE' | 'SET';
+    amount_ml: number;
+    reason?: string;
+    actor_id?: string;
+  }): Promise<InventoryItem> {
+    return this.request<InventoryItem>('/api/v1/admin/inventory/adjust', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getInventoryLogs(machineCode?: string): Promise<any[]> {
+    const q = machineCode ? `?machine=${machineCode}` : '';
+    return this.request<any[]>(`/api/v1/admin/inventory/logs${q}`);
+  }
+
+  async verifyAdminAuth(payload: { firebase_uid?: string; email: string; full_name?: string }): Promise<{
+    authorized: boolean;
+    user_id: string;
+    email: string;
+    role: string;
+    name?: string;
+  }> {
+    return this.request('/api/v1/admin/auth/verify', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   }
 }

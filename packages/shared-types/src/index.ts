@@ -65,6 +65,9 @@ export interface ProductVariant {
   channel_id: number;
   dispensing_profile_id?: string;
   is_available: boolean;
+  is_archived?: boolean;
+  available_quantity?: number;
+  display_order?: number;
   created_at?: string;
   updated_at?: string;
 }
@@ -86,6 +89,8 @@ export interface Product {
   ingredients: string[];
   nutrition: NutritionInfo;
   is_available: boolean;
+  is_archived?: boolean;
+  display_order?: number;
   is_featured: boolean;
   channel_id?: number; // legacy/default
   created_at: string;
@@ -165,6 +170,7 @@ export interface Order {
   order_number: string; 
   customer_id?: string | null;
   customer_name?: string;
+  customer_phone?: string;
   machine_id: string;
   machine_code: string;
   items: OrderItem[]; // Usually just 1 item in vending
@@ -173,9 +179,35 @@ export interface Order {
   payment_status: PaymentStatus;
   order_status: OrderStatus;
   dispensed_at?: string | null;
+  qr_token?: string;
+  source?: 'SYSTEM_1_TERMINAL' | 'PUBLIC_WEB';
   created_at: string;
   updated_at: string;
   expires_at: string;
+}
+
+export type AdminRole = 'SUPER_ADMIN' | 'ADMIN' | 'OPERATOR' | 'TECHNICIAN';
+
+export interface AdminUser {
+  id: string;
+  firebase_uid: string;
+  email: string;
+  full_name?: string;
+  role: AdminRole;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InventoryLog {
+  id: string;
+  machine_code: string;
+  channel_number: number;
+  change_amount_ml: number;
+  resulting_volume_ml: number;
+  reason: 'REFILL' | 'DISPENSE' | 'ADJUSTMENT' | 'INITIAL_SET';
+  actor_id?: string;
+  created_at: string;
 }
 
 export interface DispenseJob {

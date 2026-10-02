@@ -134,7 +134,17 @@ adminRouter.post('/inventory/:id/refill', async (req: Request, res: Response) =>
   }
 });
 
-// Products CRUD
+// Products Admin CRUD
+adminRouter.get('/products', async (req: Request, res: Response) => {
+  try {
+    const includeArchived = req.query.include_archived === 'true';
+    const products = await db.getProducts(includeArchived);
+    return res.json(products);
+  } catch (error: any) {
+    return res.status(500).json({ message: error.message });
+  }
+});
+
 adminRouter.post('/products', async (req: Request, res: Response) => {
   try {
     const validated = CreateProductSchema.parse(req.body);
@@ -142,10 +152,28 @@ adminRouter.post('/products', async (req: Request, res: Response) => {
     const created = await db.createProduct({
       ...validated,
       slug,
+      display_order: req.body.display_order || 0,
+      is_archived: false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     } as any);
-    return res.status(201).json(created);
+
+    // If variants were provided in payload, create them
+    if (Array.isArray(req.body.variants) && req.body.variants.length > 0) {
+      for (const v of req.body.variants) {
+        await db.createVariant(created.id, {
+          volume_ml: v.volume_ml || 100,
+          price: v.price || created.price,
+          channel_id: v.channel_id || created.channel_id || 1,
+          available_quantity: v.available_quantity ?? 100,
+          is_available: v.is_available ?? true,
+          display_order: v.display_order || 0,
+        });
+      }
+    }
+
+    const fullProduct = await db.getProductById(created.id);
+    return res.status(201).json(fullProduct || created);
   } catch (error: any) {
     return res.status(400).json({ message: error.message });
   }
@@ -166,11 +194,144 @@ adminRouter.put('/products/:id', async (req: Request, res: Response) => {
 
 adminRouter.delete('/products/:id', async (req: Request, res: Response) => {
   try {
-    const ok = await db.deleteProduct(req.params.id);
+    const archiveOnly = req.query.permanent !== 'true';
+    const ok = await db.deleteProduct(req.params.id, archiveOnly);
     if (!ok) {
       return res.status(404).json({ message: 'Product not found' });
     }
+    return res.json({ success: true, archived: archiveOnly });
+  } catch (error: any) {
+    return res.status(500).json({ message: error.message });
+  }
+});
+
+adminRouter.patch('/products/:id/toggle', async (req: Request, res: Response) => {
+  try {
+    const product = await db.getProductById(req.params.id);
+    if (!product) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+    const updated = await db.updateProduct(req.params.id, {
+      is_available: !product.is_available,
+    });
+    return res.json(updated);
+  } catch (error: any) {
+    return res.status(400).json({ message: error.message });
+  }
+});
+
+// Variants CRUD
+adminRouter.post('/products/:id/variants', async (req: Request, res: Response) => {
+  try {
+    const productId = req.params.id;
+    const { volume_ml, price, channel_id = 1, available_quantity = 100, is_available = true, display_order = 0 } = req.body;
+    if (!volume_ml || price === undefined) {
+      return res.status(400).json({ message: 'volume_ml and price are required' });
+    }
+    const variant = await db.createVariant(productId, {
+      volume_ml: Number(volume_ml),
+      price: Number(price),
+      channel_id: Number(channel_id),
+      available_quantity: Number(available_quantity),
+      is_available: Boolean(is_available),
+      display_order: Number(display_order),
+    });
+    return res.status(201).json(variant);
+  } catch (error: any) {
+    return res.status(400).json({ message: error.message });
+  }
+});
+
+adminRouter.put('/products/:id/variants/:variantId', async (req: Request, res: Response) => {
+  try {
+    const { id: productId, variantId } = req.params;
+    const updated = await db.updateVariant(productId, variantId, req.body);
+    if (!updated) {
+      return res.status(404).json({ message: 'Variant not found' });
+    }
+    return res.json(updated);
+  } catch (error: any) {
+    return res.status(400).json({ message: error.message });
+  }
+});
+
+adminRouter.delete('/products/:id/variants/:variantId', async (req: Request, res: Response) => {
+  try {
+    const { id: productId, variantId } = req.params;
+    const ok = await db.deleteVariant(productId, variantId);
+    if (!ok) {
+      return res.status(404).json({ message: 'Variant not found' });
+    }
     return res.json({ success: true });
+  } catch (error: any) {
+    return res.status(500).json({ message: error.message });
+  }
+});
+
+// Stock Adjustments
+adminRouter.post('/inventory/adjust', async (req: Request, res: Response) => {
+  try {
+    const { machine_code = 'AQ-DM-001', channel_number, action, amount_ml, reason = 'Admin Stock Adjustment', actor_id } = req.body;
+    if (!channel_number || !action || amount_ml === undefined) {
+      return res.status(400).json({ message: 'channel_number, action (ADD|REDUCE|SET), and amount_ml are required' });
+    }
+
+    const updated = await db.adjustStock({
+      machineCode: machine_code,
+      channelNumber: Number(channel_number),
+      action: action as 'ADD' | 'REDUCE' | 'SET',
+      amountMl: Number(amount_ml),
+      reason,
+      actorId: actor_id,
+    });
+
+    if (!updated) {
+      return res.status(404).json({ message: 'Inventory channel not found' });
+    }
+
+    return res.json(updated);
+  } catch (error: any) {
+    return res.status(400).json({ message: error.message });
+  }
+});
+
+adminRouter.get('/inventory/logs', async (req: Request, res: Response) => {
+  try {
+    const machineCode = req.query.machine as string | undefined;
+    const logs = await db.getInventoryLogs(machineCode);
+    return res.json(logs);
+  } catch (error: any) {
+    return res.status(500).json({ message: error.message });
+  }
+});
+
+// Admin Auth Verification & Role Mapping
+adminRouter.post('/auth/verify', async (req: Request, res: Response) => {
+  try {
+    const { firebase_uid, email, full_name } = req.body;
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required' });
+    }
+
+    let adminUser = await db.getAdminUserByEmail(email);
+    if (!adminUser) {
+      // Register or map default role (SUPER_ADMIN if first or admin email)
+      adminUser = await db.upsertAdminUser({
+        firebase_uid: firebase_uid || `fb-${Date.now()}`,
+        email,
+        full_name: full_name || email.split('@')[0],
+        role: email.includes('admin') || email.includes('nikhil') ? 'SUPER_ADMIN' : 'ADMIN',
+        is_active: true,
+      });
+    }
+
+    return res.json({
+      authorized: true,
+      user_id: adminUser.id,
+      email: adminUser.email,
+      role: adminUser.role,
+      name: adminUser.full_name,
+    });
   } catch (error: any) {
     return res.status(500).json({ message: error.message });
   }

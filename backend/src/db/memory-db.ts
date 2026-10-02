@@ -30,6 +30,8 @@ export class MemoryDatabase implements IDatabase {
   private events: MachineEvent[] = [];
   private errors: MachineError[] = [];
   private auditLogs: any[] = [];
+  private inventoryLogs: any[] = [];
+  private adminUsers: any[] = [];
 
   constructor() {
     this.seed();
@@ -290,8 +292,9 @@ export class MemoryDatabase implements IDatabase {
   }
 
   // Products
-  async getProducts(): Promise<Product[]> {
-    return JSON.parse(JSON.stringify(this.products));
+  async getProducts(includeArchived: boolean = false): Promise<Product[]> {
+    const list = includeArchived ? this.products : this.products.filter((p) => !p.is_archived);
+    return JSON.parse(JSON.stringify(list));
   }
   async getProductById(id: string): Promise<Product | null> {
     const p = this.products.find((item) => item.id === id);
@@ -303,6 +306,7 @@ export class MemoryDatabase implements IDatabase {
     const newProduct: Product = {
       ...data,
       id: uuidv4(),
+      is_archived: false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -319,11 +323,188 @@ export class MemoryDatabase implements IDatabase {
     };
     return JSON.parse(JSON.stringify(this.products[idx]));
   }
-  async deleteProduct(id: string): Promise<boolean> {
+  async deleteProduct(id: string, archiveOnly: boolean = true): Promise<{ success: boolean; archived: boolean }> {
     const idx = this.products.findIndex((p) => p.id === id);
-    if (idx === -1) return false;
+    if (idx === -1) return { success: false, archived: false };
+
+    // Check if referenced in historical orders
+    const isReferencedInOrders = this.orders.some((o) =>
+      o.items.some((item) => item.product_id === id)
+    );
+
+    if (archiveOnly || isReferencedInOrders) {
+      // Safe Soft-Delete / Archive: Preserves historical order integrity
+      this.products[idx].is_archived = true;
+      this.products[idx].is_available = false;
+      this.products[idx].updated_at = new Date().toISOString();
+      return { success: true, archived: true };
+    }
+
     this.products.splice(idx, 1);
-    return true;
+    return { success: true, archived: false };
+  }
+
+  async toggleProductAvailability(id: string): Promise<Product | null> {
+    const p = this.products.find((item) => item.id === id);
+    if (!p) return null;
+    p.is_available = !p.is_available;
+    p.updated_at = new Date().toISOString();
+    return JSON.parse(JSON.stringify(p));
+  }
+
+  // Variants CRUD
+  async createVariant(productId: string, variant: any): Promise<any> {
+    const p = this.products.find((item) => item.id === productId);
+    if (!p) throw new Error('Product not found');
+    if (!p.variants) p.variants = [];
+
+    const newVariant = {
+      ...variant,
+      id: uuidv4(),
+      product_id: productId,
+      is_archived: false,
+      is_available: variant.is_available ?? true,
+      available_quantity: variant.available_quantity ?? 100,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    p.variants.push(newVariant);
+    return JSON.parse(JSON.stringify(newVariant));
+  }
+
+  async updateVariant(arg1: string, arg2: any, arg3?: any): Promise<any | null> {
+    let productId = '';
+    let variantId = '';
+    let updates: any = {};
+    if (arg3 !== undefined) {
+      productId = arg1;
+      variantId = arg2;
+      updates = arg3;
+    } else {
+      variantId = arg1;
+      updates = arg2;
+    }
+
+    for (const p of this.products) {
+      if (!p.variants) continue;
+      if (productId && p.id !== productId) continue;
+      const vIdx = p.variants.findIndex((v) => v.id === variantId);
+      if (vIdx !== -1) {
+        p.variants[vIdx] = {
+          ...p.variants[vIdx],
+          ...updates,
+          updated_at: new Date().toISOString(),
+        };
+        return JSON.parse(JSON.stringify(p.variants[vIdx]));
+      }
+    }
+    return null;
+  }
+
+  async deleteVariant(arg1: string, arg2?: string): Promise<boolean> {
+    const productId = arg2 !== undefined ? arg1 : '';
+    const variantId = arg2 !== undefined ? arg2 : arg1;
+
+    for (const p of this.products) {
+      if (!p.variants) continue;
+      if (productId && p.id !== productId) continue;
+      const vIdx = p.variants.findIndex((v) => v.id === variantId);
+      if (vIdx !== -1) {
+        // Soft-delete variant
+        p.variants[vIdx].is_archived = true;
+        p.variants[vIdx].is_available = false;
+        p.variants[vIdx].updated_at = new Date().toISOString();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Stock Adjustment & Audit Logging
+  async adjustStock(params: any): Promise<InventoryItem | null> {
+    const machineCode = params.machineCode || params.machine_code || 'AQ-DM-001';
+    const channelNumber = params.channelNumber || params.channel_number;
+    const action = params.action;
+    const amountMl = params.amountMl || params.amount_ml;
+    const reason = params.reason || 'Manual Adjustment';
+    const actorId = params.actorId || params.actor_id || 'admin';
+
+    const inv = this.inventory.find(
+      (i) =>
+        i.machine_code?.toUpperCase() === machineCode.toUpperCase() &&
+        i.channel_number === channelNumber
+    );
+    if (!inv) return null;
+
+    let newVolume = inv.current_volume_ml;
+    if (action === 'ADD') {
+      newVolume = Math.min(inv.max_volume_ml, inv.current_volume_ml + amountMl);
+    } else if (action === 'REDUCE') {
+      newVolume = Math.max(0, inv.current_volume_ml - amountMl);
+    } else if (action === 'SET') {
+      newVolume = Math.max(0, Math.min(inv.max_volume_ml, amountMl));
+    }
+
+    inv.current_volume_ml = newVolume;
+    inv.updated_at = new Date().toISOString();
+    inv.status =
+      newVolume === 0
+        ? 'OUT_OF_STOCK'
+        : newVolume <= inv.critical_threshold_ml
+        ? 'CRITICAL'
+        : newVolume <= inv.low_threshold_ml
+        ? 'LOW'
+        : 'GOOD';
+
+    // Log to inventory history
+    this.inventoryLogs.push({
+      id: uuidv4(),
+      machine_code: machineCode,
+      channel_number: channelNumber,
+      change_amount_ml: amountMl,
+      resulting_volume_ml: newVolume,
+      reason: reason,
+      actor_id: actorId,
+      created_at: new Date().toISOString(),
+    });
+
+    return JSON.parse(JSON.stringify(inv));
+  }
+
+  async getInventoryLogs(machineCode?: string): Promise<any[]> {
+    const logs = machineCode
+      ? this.inventoryLogs.filter((l) => l.machine_code.toUpperCase() === machineCode.toUpperCase())
+      : this.inventoryLogs;
+    return JSON.parse(JSON.stringify(logs.reverse()));
+  }
+
+  // Admin Auth Mapping
+  async getAdminUserByFirebaseUid(uid: string): Promise<any | null> {
+    const u = this.adminUsers.find((user) => user.firebase_uid === uid && user.is_active);
+    return u ? JSON.parse(JSON.stringify(u)) : null;
+  }
+
+  async getAdminUserByEmail(email: string): Promise<any | null> {
+    const u = this.adminUsers.find((user) => user.email.toLowerCase() === email.toLowerCase() && user.is_active);
+    return u ? JSON.parse(JSON.stringify(u)) : null;
+  }
+
+  async upsertAdminUser(user: any): Promise<any> {
+    const idx = this.adminUsers.findIndex((u) => u.email.toLowerCase() === user.email.toLowerCase());
+    if (idx !== -1) {
+      this.adminUsers[idx] = { ...this.adminUsers[idx], ...user, updated_at: new Date().toISOString() };
+      return JSON.parse(JSON.stringify(this.adminUsers[idx]));
+    }
+    const newUser = {
+      id: uuidv4(),
+      role: 'ADMIN',
+      is_active: true,
+      ...user,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    this.adminUsers.push(newUser);
+    return JSON.parse(JSON.stringify(newUser));
   }
 
   // Machines
@@ -452,9 +633,28 @@ export class MemoryDatabase implements IDatabase {
     const ord = this.orders.find((o) => o.order_number === orderNumber);
     return ord ? JSON.parse(JSON.stringify(ord)) : null;
   }
-  async createOrder(order: Order): Promise<Order> {
-    this.orders.push(order);
-    return JSON.parse(JSON.stringify(order));
+  async createOrder(order: any): Promise<Order> {
+    const newOrder: Order = {
+      id: order.id || uuidv4(),
+      order_number: order.order_number || ('AQ-' + Math.floor(100000 + Math.random() * 900000)),
+      customer_id: order.customer_id,
+      customer_name: order.customer_name || 'Customer',
+      customer_phone: order.customer_phone,
+      machine_id: order.machine_id || 'm1111111-1111-1111-1111-111111111111',
+      machine_code: order.machine_code || 'AQ-DM-001',
+      source: order.source || 'SYSTEM_1_TERMINAL',
+      amount: order.amount,
+      currency: order.currency || 'INR',
+      payment_status: order.payment_status || 'PENDING',
+      order_status: order.order_status || 'CREATED',
+      qr_token: order.qr_token,
+      items: order.items || [],
+      created_at: order.created_at || new Date().toISOString(),
+      updated_at: order.updated_at || new Date().toISOString(),
+      expires_at: order.expires_at || new Date(Date.now() + 15 * 60000).toISOString(),
+    };
+    this.orders.push(newOrder);
+    return JSON.parse(JSON.stringify(newOrder));
   }
   async updateOrderStatus(
     id: string,

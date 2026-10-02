@@ -1,5 +1,6 @@
 import {
   Product,
+  ProductVariant,
   Category,
   Machine,
   MachineChannel,
@@ -21,11 +22,17 @@ export interface IDatabase {
   getCategoryById(id: string): Promise<Category | null>;
 
   // Products
-  getProducts(): Promise<Product[]>;
+  getProducts(includeArchived?: boolean): Promise<Product[]>;
   getProductById(id: string): Promise<Product | null>;
   createProduct(product: Omit<Product, 'id' | 'created_at' | 'updated_at'>): Promise<Product>;
   updateProduct(id: string, updates: Partial<Product>): Promise<Product | null>;
-  deleteProduct(id: string): Promise<boolean>;
+  deleteProduct(id: string, archiveOnly?: boolean): Promise<{ success: boolean; archived: boolean } | boolean>;
+  toggleProductAvailability(id: string): Promise<Product | null>;
+
+  // Variants
+  createVariant(productId: string, variant: Omit<ProductVariant, 'id' | 'product_id'> | any): Promise<ProductVariant>;
+  updateVariant(productIdOrVariantId: string, variantIdOrUpdates: any, updates?: Partial<ProductVariant>): Promise<ProductVariant | null>;
+  deleteVariant(productIdOrVariantId: string, variantId?: string): Promise<boolean>;
 
   // Machines & Channels
   getMachines(): Promise<Machine[]>;
@@ -42,11 +49,25 @@ export interface IDatabase {
   getDispensingProfiles(): Promise<DispensingProfile[]>;
   getDispensingProfileByChannel(channelNumber: number): Promise<DispensingProfile | null>;
 
-  // Inventory
+  // Inventory & Stock Adjustment
   getInventory(): Promise<InventoryItem[]>;
   getInventoryByMachineAndChannel(machineId: string, channelNumber: number): Promise<InventoryItem | null>;
   deductInventory(machineId: string, channelNumber: number, volumeMl: number): Promise<InventoryItem | null>;
   refillInventory(id: string, volumeMl: number): Promise<InventoryItem | null>;
+  adjustStock(params: {
+    machineCode: string;
+    channelNumber: number;
+    action: 'ADD' | 'REDUCE' | 'SET';
+    amountMl: number;
+    reason: string;
+    actorId?: string;
+  }): Promise<InventoryItem | null>;
+  getInventoryLogs(machineCode?: string): Promise<any[]>;
+
+  // Admin Auth Mapping
+  getAdminUserByFirebaseUid(uid: string): Promise<any | null>;
+  getAdminUserByEmail(email: string): Promise<any | null>;
+  upsertAdminUser(user: any): Promise<any>;
 
   // Orders
   getOrders(): Promise<Order[]>;
