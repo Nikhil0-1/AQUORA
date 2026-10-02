@@ -75,7 +75,11 @@ serve(async (req: Request) => {
   }
 
   // 2. Verify server-side secret configuration
-  if (!RAZORPAY_WEBHOOK_SECRET) {
+  const webhookSecret =
+    Deno.env.get("RAZORPAY_WEBHOOK_SECRET")?.trim() ||
+    RAZORPAY_WEBHOOK_SECRET;
+
+  if (!webhookSecret) {
     console.error("[CRITICAL] RAZORPAY_WEBHOOK_SECRET environment variable is missing on server");
     return new Response(
       JSON.stringify({
@@ -103,7 +107,7 @@ serve(async (req: Request) => {
     const isValidSignature = await verifyRazorpaySignature(
       rawBody,
       signature,
-      RAZORPAY_WEBHOOK_SECRET
+      webhookSecret
     );
 
     if (!isValidSignature) {
