@@ -1,0 +1,31 @@
+{
+  "name": "aquora-smart-sanitizer-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Production-Ready Mobile-First Smart Sanitizer Vending Platform",
+  "workspaces": [
+    "packages/*",
+    "backend",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:backend": "npm --workspace=@aquora/backend run dev",
+    "dev:terminal": "npm --workspace=@aquora/payment-terminal run dev",
+    "dev:customer": "npm --workspace=@aquora/payment-terminal run dev",
+    "dev:admin": "npm --workspace=@aquora/admin-dashboard run dev",
+    "dev:simulator": "npm --workspace=@aquora/machine-simulator run dev",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm --workspace=@aquora/backend run test",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "keywords": [
+    "iot",
+    "vending-machine",
+    "esp32",
+    "react",
+    "threejs",
+    "supabase"
+  ],
+  "author": "Antigravity Engineering",
+  "license": "MIT"
+}
