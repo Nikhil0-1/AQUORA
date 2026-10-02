@@ -44,26 +44,32 @@ export interface ProductVariant {
   price: number;
   channel_id: number;
   is_available: boolean;
+  is_archived?: boolean;
+  available_quantity?: number;
+  display_order?: number;
 }
 
 export interface Product {
   id: string;
   name: string;
-  slug: string;
+  slug?: string;
   description: string;
-  short_description: string;
+  short_description?: string;
   category_id: string;
+  category_name?: string;
   price: number;
   currency: string;
   image_url: string;
   volume_ml?: number;
   variants?: ProductVariant[];
-  ingredients: string[];
+  ingredients?: string[];
   is_available: boolean;
-  is_featured: boolean;
+  is_archived?: boolean;
+  is_featured?: boolean;
+  display_order?: number;
   channel_id?: number;
-  created_at: string;
-  updated_at: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface MachineChannel {
@@ -103,17 +109,18 @@ export interface InventoryItem {
   current_volume_ml: number;
   max_volume_ml: number;
   low_threshold_ml: number;
+  critical_threshold_ml?: number;
   status: StockLevelStatus;
-  last_refilled_at: string;
-  updated_at: string;
+  last_refilled_at?: string;
+  updated_at?: string;
 }
 
 export interface OrderItem {
-  id: string;
-  order_id: string;
+  id?: string;
+  order_id?: string;
   product_id: string;
   product_name: string;
-  channel_id: number;
+  channel_id?: number;
   quantity: number;
   volume_ml: number;
   unit_price: number;
@@ -124,6 +131,7 @@ export interface Order {
   id: string;
   order_number: string;
   customer_name?: string;
+  customer_phone?: string;
   machine_id: string;
   machine_code: string;
   items: OrderItem[];
@@ -131,10 +139,12 @@ export interface Order {
   currency: string;
   payment_status: PaymentStatus;
   order_status: OrderStatus;
+  source?: 'SYSTEM_1_TERMINAL' | 'PUBLIC_WEB';
+  qr_token?: string;
   dispensed_at?: string | null;
   created_at: string;
   updated_at: string;
-  expires_at: string;
+  expires_at?: string;
 }
 
 export interface Category {
@@ -154,4 +164,17 @@ export interface MachineTelemetry {
   uptime_seconds: number;
   wifi_rssi_dbm: number;
   state: string;
+}
+
+export type AdminRole = 'SUPER_ADMIN' | 'ADMIN' | 'OPERATOR' | 'TECHNICIAN';
+
+export interface AdminUser {
+  id: string;
+  firebase_uid: string;
+  email: string;
+  display_name?: string;
+  role: AdminRole;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }

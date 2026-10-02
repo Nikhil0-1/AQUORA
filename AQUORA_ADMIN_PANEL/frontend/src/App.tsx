@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { api } from '@aquora/api-client';
-import { Machine, Order, InventoryItem, Product } from '@aquora/shared-types';
+import { api } from './api';
+import { Machine, Order, InventoryItem, Product } from './types';
 import { 
   LayoutDashboard, 
   Droplets, 

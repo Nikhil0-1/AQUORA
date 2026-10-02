@@ -3,7 +3,7 @@
  * Mirrors the functionality from @aquora/api-client
  */
 
-import { Product, Category, Order, Machine, InventoryItem } from './types';
+import { Product, ProductVariant, Category, Order, Machine, InventoryItem } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -86,6 +86,10 @@ export class AquoraApiClient {
     });
   }
 
+  async getAdminProducts(): Promise<Product[]> {
+    return this.request<Product[]>('/api/v1/admin/products');
+  }
+
   async createProduct(product: Partial<Product>): Promise<Product> {
     return this.request<Product>('/api/v1/admin/products', {
       method: 'POST',
@@ -100,10 +104,57 @@ export class AquoraApiClient {
     });
   }
 
-  async deleteProduct(id: string): Promise<{ success: boolean }> {
+  async deleteProduct(id: string): Promise<{ success: boolean; archived: boolean }> {
     return this.request(`/api/v1/admin/products/${id}`, {
       method: 'DELETE',
     });
+  }
+
+  async toggleProductAvailability(id: string): Promise<Product> {
+    return this.request<Product>(`/api/v1/admin/products/${id}/toggle`, {
+      method: 'PATCH',
+    });
+  }
+
+  // Variants API
+  async createVariant(productId: string, variant: Partial<ProductVariant>): Promise<ProductVariant> {
+    return this.request<ProductVariant>(`/api/v1/admin/products/${productId}/variants`, {
+      method: 'POST',
+      body: JSON.stringify(variant),
+    });
+  }
+
+  async updateVariant(productId: string, variantId: string, updates: Partial<ProductVariant>): Promise<ProductVariant> {
+    return this.request<ProductVariant>(`/api/v1/admin/products/${productId}/variants/${variantId}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async deleteVariant(productId: string, variantId: string): Promise<{ success: boolean }> {
+    return this.request(`/api/v1/admin/products/${productId}/variants/${variantId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Inventory Adjustments & Audit Logs
+  async adjustStock(payload: {
+    machine_code: string;
+    channel_number: number;
+    action: 'ADD' | 'REDUCE' | 'SET';
+    amount_ml: number;
+    reason: string;
+    actor_id?: string;
+  }): Promise<InventoryItem> {
+    return this.request<InventoryItem>('/api/v1/admin/inventory/adjust', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getInventoryLogs(machineCode?: string): Promise<any[]> {
+    const q = machineCode ? `?machine_code=${machineCode}` : '';
+    return this.request<any[]>(`/api/v1/admin/inventory/logs${q}`);
   }
 }
 

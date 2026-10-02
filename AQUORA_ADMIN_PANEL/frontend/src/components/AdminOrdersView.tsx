@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Order } from '@aquora/shared-types';
+import { Order } from '../types';
 import { 
   ShoppingCart, 
   Search, 

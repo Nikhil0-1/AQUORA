@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { InventoryItem } from '@aquora/shared-types';
-import { api } from '@aquora/api-client';
+import { InventoryItem } from '../types';
+import { api } from '../api';
 import { 
   Droplet, 
   RefreshCw, 
