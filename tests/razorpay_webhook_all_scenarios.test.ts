@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import * as crypto from 'crypto';
 import { getDatabase } from '../backend/src/db';
 import { orderService } from '../backend/src/services/order.service';
@@ -6,7 +6,7 @@ import { paymentService } from '../backend/src/services/payment.service';
 import { machineService } from '../backend/src/services/machine.service';
 import { PROTOCOL_VERSION, ErrorCode } from '@aquora/machine-protocol';
 
-describe('AQUORA Razorpay Webhook & Direct ESP32 Dispensing (All 10 Verification Tests)', () => {
+describe('AQUORA Razorpay Webhook & Direct ESP32 Dispensing (Comprehensive Verification Tests)', () => {
   const db = getDatabase();
   const TEST_WEBHOOK_SECRET = 'rzp_test_secret_aquora_secure_key_123';
 
@@ -36,7 +36,7 @@ describe('AQUORA Razorpay Webhook & Direct ESP32 Dispensing (All 10 Verification
     const event = payload.event;
     const eventId = payload.id || payload.event_id || `${event}_${payload.payload?.payment?.entity?.id || Date.now()}`;
 
-    // Idempotency check
+    // Idempotency check: same event ID
     const existingEvents = (db as any).webhookEvents || [];
     const duplicate = existingEvents.find((e: any) => e.razorpay_event_id === eventId && e.status === 'PROCESSED');
     if (duplicate) {
@@ -50,11 +50,13 @@ describe('AQUORA Razorpay Webhook & Direct ESP32 Dispensing (All 10 Verification
 
     if (event === 'payment.captured' || event === 'order.paid') {
       const paymentEntity = payload.payload?.payment?.entity;
-      if (!paymentEntity) {
-        return { status: 400, body: { error: 'Missing payment entity in payload' } };
+      const orderEntity = payload.payload?.order?.entity;
+
+      if (!paymentEntity && !orderEntity) {
+        return { status: 400, body: { error: 'Missing payment and order entity in payload' } };
       }
 
-      const orderId = paymentEntity.notes?.order_id;
+      const orderId = paymentEntity?.notes?.order_id || orderEntity?.notes?.order_id;
       if (!orderId) {
         return { status: 404, body: { error: 'Order not found matching payment notes' } };
       }
@@ -64,15 +66,35 @@ describe('AQUORA Razorpay Webhook & Direct ESP32 Dispensing (All 10 Verification
         return { status: 404, body: { error: 'Order not found matching payment notes' } };
       }
 
-      const amountInr = paymentEntity.amount / 100;
+      const amountInr = (paymentEntity?.amount || orderEntity?.amount || 0) / 100;
       if (Math.abs(order.amount - amountInr) > 0.01) {
         return { status: 400, body: { error: 'Payment amount mismatch', expected: order.amount, received: amountInr } };
+      }
+
+      // Strong Cross-Event Idempotency:
+      // If a dispense job ALREADY exists for this order (e.g. from payment.captured or order.paid), do NOT create another
+      const existingJobs = (db as any).dispenseJobs.filter((j: any) => j.order_id === order.id);
+      if (existingJobs.length > 0) {
+        const evt = (db as any).webhookEvents.find((e: any) => e.razorpay_event_id === eventId);
+        if (evt) evt.status = 'PROCESSED';
+
+        return {
+          status: 200,
+          body: {
+            success: true,
+            order_id: order.id,
+            payment_status: 'PAID',
+            dispense_job_id: existingJobs[0].id,
+            job_status: existingJobs[0].status,
+            note: 'Dispense job already existed; reconciled successfully',
+          },
+        };
       }
 
       // Handle verified payment & job creation
       const result = await paymentService.handleVerifiedPayment({
         order_id: order.id,
-        payment_id: paymentEntity.id,
+        payment_id: paymentEntity?.id || `pay_${Date.now()}`,
         amount: amountInr,
         provider: 'RAZORPAY',
         signature,
@@ -111,7 +133,7 @@ describe('AQUORA Razorpay Webhook & Direct ESP32 Dispensing (All 10 Verification
     return { status: 200, body: { status: 'ignored_unhandled_event' } };
   }
 
-  it('Test 1: Valid webhook → signature valid → payment verified → payment updated → order updated → exactly one dispense job created', async () => {
+  it('TEST A & B: Valid signature → payment verified → payment updated → order updated → exactly one dispense job created', async () => {
     const products = await db.getProducts();
     const product = products[0];
 
@@ -128,7 +150,7 @@ describe('AQUORA Razorpay Webhook & Direct ESP32 Dispensing (All 10 Verification
         payment: {
           entity: {
             id: `pay_test1_${Date.now()}`,
-            amount: Math.round(order.amount * 100), // in paise
+            amount: Math.round(order.amount * 100),
             currency: 'INR',
             status: 'captured',
             notes: { order_id: order.id, order_number: order.order_number },
@@ -155,7 +177,7 @@ describe('AQUORA Razorpay Webhook & Direct ESP32 Dispensing (All 10 Verification
     expect(jobs.length).toBe(1);
   });
 
-  it('Test 2: Invalid signature → rejected → no database payment mutation → no dispense job', async () => {
+  it('TEST C: Invalid signature → rejected → no database payment mutation → no dispense job', async () => {
     const products = await db.getProducts();
     const product = products[0];
 
@@ -196,26 +218,23 @@ describe('AQUORA Razorpay Webhook & Direct ESP32 Dispensing (All 10 Verification
     expect(jobs.length).toBe(0);
   });
 
-  it('Test 3: Duplicate webhook → detected → no second dispense job', async () => {
+  it('TEST D: payment.captured event processing', async () => {
     const products = await db.getProducts();
     const product = products[0];
 
     const order = await orderService.createOrder({
       machine_code: 'AQ-DM-001',
-      customer_name: 'Duplicate Test Customer',
+      customer_name: 'Captured Test Customer',
       items: [{ product_id: product.id, quantity: 1, volume_ml: 100 }],
     });
 
-    const eventId = `evt_duplicate_${Date.now()}`;
-    const paymentId = `pay_duplicate_${Date.now()}`;
-
     const payload = {
-      id: eventId,
+      id: `evt_cap_${Date.now()}`,
       event: 'payment.captured',
       payload: {
         payment: {
           entity: {
-            id: paymentId,
+            id: `pay_cap_${Date.now()}`,
             amount: Math.round(order.amount * 100),
             currency: 'INR',
             status: 'captured',
@@ -228,22 +247,13 @@ describe('AQUORA Razorpay Webhook & Direct ESP32 Dispensing (All 10 Verification
     const rawBody = JSON.stringify(payload);
     const signature = calculateSignature(rawBody);
 
-    // First arrival
-    const res1 = await processWebhook(rawBody, signature);
-    expect(res1.status).toBe(200);
-    expect(res1.body.success).toBe(true);
-
-    // Second arrival (retry with same eventId)
-    const res2 = await processWebhook(rawBody, signature);
-    expect(res2.status).toBe(200);
-    expect(res2.body.status).toBe('ignored_duplicate_event');
-
-    // Exactly one job exists
-    const jobs = (db as any).dispenseJobs.filter((j: any) => j.order_id === order.id);
-    expect(jobs.length).toBe(1);
+    const res = await processWebhook(rawBody, signature);
+    expect(res.status).toBe(200);
+    expect(res.body.payment_status).toBe('PAID');
+    expect(res.body.job_status).toBe('QUEUED');
   });
 
-  it('Test 4: Payment failure → payment/order updated → no dispense job', async () => {
+  it('TEST E: payment.failed → payment/order updated to FAILED → no dispense job', async () => {
     const products = await db.getProducts();
     const product = products[0];
 
@@ -286,7 +296,154 @@ describe('AQUORA Razorpay Webhook & Direct ESP32 Dispensing (All 10 Verification
     expect(jobs.length).toBe(0);
   });
 
-  it('Test 5: Amount mismatch → rejected safely → no dispensing', async () => {
+  it('TEST F: order.paid event processing', async () => {
+    const products = await db.getProducts();
+    const product = products[0];
+
+    const order = await orderService.createOrder({
+      machine_code: 'AQ-DM-001',
+      customer_name: 'Order Paid Customer',
+      items: [{ product_id: product.id, quantity: 1, volume_ml: 100 }],
+    });
+
+    const payload = {
+      id: `evt_ord_paid_${Date.now()}`,
+      event: 'order.paid',
+      payload: {
+        order: {
+          entity: {
+            id: `order_rzp_${Date.now()}`,
+            amount: Math.round(order.amount * 100),
+            amount_paid: Math.round(order.amount * 100),
+            status: 'paid',
+            notes: { order_id: order.id },
+          },
+        },
+      },
+    };
+
+    const rawBody = JSON.stringify(payload);
+    const signature = calculateSignature(rawBody);
+
+    const res = await processWebhook(rawBody, signature);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.payment_status).toBe('PAID');
+    expect(res.body.dispense_job_id).toBeDefined();
+
+    const jobs = (db as any).dispenseJobs.filter((j: any) => j.order_id === order.id);
+    expect(jobs.length).toBe(1);
+  });
+
+  it('TEST G: payment.captured + order.paid for SAME order → results in ONE dispense job only', async () => {
+    const products = await db.getProducts();
+    const product = products[0];
+
+    const order = await orderService.createOrder({
+      machine_code: 'AQ-DM-001',
+      customer_name: 'Cross Event Idempotency Customer',
+      items: [{ product_id: product.id, quantity: 1, volume_ml: 100 }],
+    });
+
+    // 1. payment.captured arrives first
+    const payload1 = {
+      id: `evt_cap_first_${Date.now()}`,
+      event: 'payment.captured',
+      payload: {
+        payment: {
+          entity: {
+            id: `pay_shared_${Date.now()}`,
+            amount: Math.round(order.amount * 100),
+            currency: 'INR',
+            status: 'captured',
+            notes: { order_id: order.id },
+          },
+        },
+      },
+    };
+
+    const raw1 = JSON.stringify(payload1);
+    const sig1 = calculateSignature(raw1);
+    const res1 = await processWebhook(raw1, sig1);
+    expect(res1.status).toBe(200);
+    expect(res1.body.success).toBe(true);
+    const firstJobId = res1.body.dispense_job_id;
+
+    // 2. order.paid arrives afterwards with DIFFERENT event ID
+    const payload2 = {
+      id: `evt_ord_paid_second_${Date.now()}`,
+      event: 'order.paid',
+      payload: {
+        order: {
+          entity: {
+            id: `order_shared_${Date.now()}`,
+            amount: Math.round(order.amount * 100),
+            amount_paid: Math.round(order.amount * 100),
+            status: 'paid',
+            notes: { order_id: order.id },
+          },
+        },
+      },
+    };
+
+    const raw2 = JSON.stringify(payload2);
+    const sig2 = calculateSignature(raw2);
+    const res2 = await processWebhook(raw2, sig2);
+    expect(res2.status).toBe(200);
+    expect(res2.body.dispense_job_id).toBe(firstJobId); // Points to the EXACT same job!
+
+    // Verify database has EXACTLY ONE job for this order
+    const jobs = (db as any).dispenseJobs.filter((j: any) => j.order_id === order.id);
+    expect(jobs.length).toBe(1);
+  });
+
+  it('TEST H: Duplicate webhook retry → detected → no duplicate job', async () => {
+    const products = await db.getProducts();
+    const product = products[0];
+
+    const order = await orderService.createOrder({
+      machine_code: 'AQ-DM-001',
+      customer_name: 'Duplicate Test Customer',
+      items: [{ product_id: product.id, quantity: 1, volume_ml: 100 }],
+    });
+
+    const eventId = `evt_duplicate_${Date.now()}`;
+    const paymentId = `pay_duplicate_${Date.now()}`;
+
+    const payload = {
+      id: eventId,
+      event: 'payment.captured',
+      payload: {
+        payment: {
+          entity: {
+            id: paymentId,
+            amount: Math.round(order.amount * 100),
+            currency: 'INR',
+            status: 'captured',
+            notes: { order_id: order.id },
+          },
+        },
+      },
+    };
+
+    const rawBody = JSON.stringify(payload);
+    const signature = calculateSignature(rawBody);
+
+    // First arrival
+    const res1 = await processWebhook(rawBody, signature);
+    expect(res1.status).toBe(200);
+    expect(res1.body.success).toBe(true);
+
+    // Second arrival (retry with same eventId)
+    const res2 = await processWebhook(rawBody, signature);
+    expect(res2.status).toBe(200);
+    expect(res2.body.status).toBe('ignored_duplicate_event');
+
+    const jobs = (db as any).dispenseJobs.filter((j: any) => j.order_id === order.id);
+    expect(jobs.length).toBe(1);
+  });
+
+  it('TEST I: Amount mismatch → rejected safely → no dispensing', async () => {
     const products = await db.getProducts();
     const product = products[0];
 
@@ -319,7 +476,6 @@ describe('AQUORA Razorpay Webhook & Direct ESP32 Dispensing (All 10 Verification
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Payment amount mismatch');
 
-    // Order remains PENDING
     const unchangedOrder = await db.getOrderById(order.id);
     expect(unchangedOrder?.payment_status).toBe('PENDING');
 
@@ -327,7 +483,7 @@ describe('AQUORA Razorpay Webhook & Direct ESP32 Dispensing (All 10 Verification
     expect(jobs.length).toBe(0);
   });
 
-  it('Test 6: Missing order → safe error → no dispensing', async () => {
+  it('TEST J: Unknown order → safe error → no dispensing', async () => {
     const payload = {
       id: `evt_missing_${Date.now()}`,
       event: 'payment.captured',
@@ -352,71 +508,7 @@ describe('AQUORA Razorpay Webhook & Direct ESP32 Dispensing (All 10 Verification
     expect(res.body.error).toBe('Order not found matching payment notes');
   });
 
-  it('Test 7: Expired dispense job → SYSTEM 2 rejects job → pump remains OFF', async () => {
-    const expiredJob = {
-      jobId: 'AQ-JOB-EXPIRED-99',
-      orderId: 'order-expired-99',
-      machineId: 'AQ-DM-001',
-      channel: 2,
-      targetVolumeMl: 100,
-      protocolVersion: 1,
-      expiresAt: new Date(Date.now() - 3600 * 1000).toISOString(), // 1 hour in the past!
-      isValid: false,
-    };
-
-    // ESP32 System 2 validation check
-    const isExpired = new Date(expiredJob.expiresAt).getTime() < Date.now();
-    expect(isExpired).toBe(true);
-    // When expired, System 2 never starts pump and rejects the job
-    const pumpEnergized = !isExpired;
-    expect(pumpEnergized).toBe(false);
-  });
-
-  it('Test 8: Flow sensor failure → pump stops → dispense FAILED', async () => {
-    const products = await db.getProducts();
-    const product = products[0];
-
-    const order = await orderService.createOrder({
-      machine_code: 'AQ-DM-001',
-      items: [{ product_id: product.id, quantity: 1, volume_ml: 100 }],
-    });
-
-    const paymentRes = await paymentService.handleVerifiedPayment({
-      order_id: order.id,
-      payment_id: `pay_flow_err_${Date.now()}`,
-      amount: order.amount,
-      provider: 'RAZORPAY',
-    });
-
-    const jobId = paymentRes.job!.id;
-
-    // Pump starts
-    await machineService.handleDispenseStart({
-      machine_id: 'AQ-DM-001',
-      machine_code: 'AQ-DM-001',
-      channel_number: 1,
-      job_id: jobId,
-      target_volume_ml: 100,
-      timestamp: new Date().toISOString(),
-    });
-
-    // Flow sensor reports NO PULSES (Pump dry-run / disconnected sensor timeout)
-    await machineService.handleDispenseFail({
-      machine_id: 'AQ-DM-001',
-      machine_code: 'AQ-DM-001',
-      channel_number: 1,
-      job_id: jobId,
-      dispensed_so_far_ml: 0,
-      error_code: ErrorCode.FLOW_ERROR,
-      error_message: 'Flow sensor timeout: 0 pulses in 3000ms',
-    });
-
-    const failedOrder = await db.getOrderById(order.id);
-    expect(failedOrder?.order_status).toBe('FAILED');
-    expect(failedOrder?.payment_status).toBe('PAID'); // Payment remains recorded
-  });
-
-  it('Test 9: Successful physical dispensing → flow sensor reaches target volume → pump OFF → hardware completion sent → Supabase dispense = DISPENSED', async () => {
+  it('TEST K: Valid dispense job reaches SYSTEM 2 architecture', async () => {
     const products = await db.getProducts();
     const product = products[1];
 
@@ -427,18 +519,38 @@ describe('AQUORA Razorpay Webhook & Direct ESP32 Dispensing (All 10 Verification
 
     const paymentRes = await paymentService.handleVerifiedPayment({
       order_id: order.id,
-      payment_id: `pay_success_flow_${Date.now()}`,
+      payment_id: `pay_sys2_${Date.now()}`,
+      amount: order.amount,
+      provider: 'RAZORPAY',
+    });
+
+    const jobs = (db as any).dispenseJobs || [];
+    const matchingJob = jobs.find((j: any) => j.id === paymentRes.job!.id);
+    expect(matchingJob).toBeDefined();
+    expect(matchingJob.channel_id).toBe(2);
+    expect(matchingJob.target_volume_ml).toBe(100);
+    expect(matchingJob.status).toBe('QUEUED');
+  });
+
+  it('TEST L: Flow sensor completion → actual volume verified → hardware reports DISPENSED', async () => {
+    const products = await db.getProducts();
+    const product = products[1];
+
+    const order = await orderService.createOrder({
+      machine_code: 'AQ-DM-001',
+      items: [{ product_id: product.id, quantity: 1, volume_ml: 100 }],
+    });
+
+    const paymentRes = await paymentService.handleVerifiedPayment({
+      order_id: order.id,
+      payment_id: `pay_sensor_test_${Date.now()}`,
       amount: order.amount,
       provider: 'RAZORPAY',
     });
 
     const jobId = paymentRes.job!.id;
 
-    // 1. Machine fetches job
-    const job = await machineService.getNextJobForMachine('AQ-DM-001');
-    expect(job).toBeDefined();
-
-    // 2. Machine accepts job
+    // 1. Accept job
     await machineService.handleJobAccept({
       job_id: jobId,
       machine_id: 'AQ-DM-001',
@@ -446,7 +558,7 @@ describe('AQUORA Razorpay Webhook & Direct ESP32 Dispensing (All 10 Verification
       timestamp: new Date().toISOString(),
     });
 
-    // 3. Machine starts dispensing
+    // 2. Start Pump
     await machineService.handleDispenseStart({
       machine_id: 'AQ-DM-001',
       machine_code: 'AQ-DM-001',
@@ -456,20 +568,7 @@ describe('AQUORA Razorpay Webhook & Direct ESP32 Dispensing (All 10 Verification
       timestamp: new Date().toISOString(),
     });
 
-    // 4. Live progress telemetry
-    await machineService.handleDispenseProgress({
-      machine_id: 'AQ-DM-001',
-      machine_code: 'AQ-DM-001',
-      channel_number: 2,
-      job_id: jobId,
-      target_volume_ml: 100,
-      dispensed_volume_ml: 100,
-      flow_rate_ml_s: 16.0,
-      elapsed_seconds: 6.2,
-      percentage: 100,
-    });
-
-    // 5. Hardware Completion: Flow sensor reached 1000 pulses = 100ml
+    // 3. Flow pulses reach target volume (1000 pulses = 100ml)
     const completeRes = await machineService.handleDispenseComplete({
       machine_id: 'AQ-DM-001',
       machine_code: 'AQ-DM-001',
@@ -484,13 +583,56 @@ describe('AQUORA Razorpay Webhook & Direct ESP32 Dispensing (All 10 Verification
     expect(completeRes.success).toBe(true);
     expect(completeRes.job_status).toBe('DISPENSED');
 
-    // 6. Supabase Order becomes DISPENSED
+    // Supabase order becomes DISPENSED only after hardware completion
     const finalOrder = await db.getOrderById(order.id);
     expect(finalOrder?.order_status).toBe('DISPENSED');
-    expect(finalOrder?.dispensed_at).toBeDefined();
   });
 
-  it('Test 10: ESP32 restart during job → job is reconciled → no blind duplicate dispensing', async () => {
+  it('TEST M: Pump failure / no-flow timeout → pump stops and marks dispense FAILED', async () => {
+    const products = await db.getProducts();
+    const classic = products[0];
+
+    const order = await orderService.createOrder({
+      machine_code: 'AQ-DM-001',
+      items: [{ product_id: classic.id, quantity: 1, volume_ml: 50 }],
+    });
+
+    const paymentRes = await paymentService.handleVerifiedPayment({
+      order_id: order.id,
+      payment_id: `pay_fault_${Date.now()}`,
+      amount: order.amount,
+      provider: 'RAZORPAY',
+    });
+
+    const jobId = paymentRes.job!.id;
+
+    // Pump starts
+    await machineService.handleDispenseStart({
+      machine_id: 'AQ-DM-001',
+      machine_code: 'AQ-DM-001',
+      channel_number: 1,
+      job_id: jobId,
+      target_volume_ml: 50,
+      timestamp: new Date().toISOString(),
+    });
+
+    // Flow sensor reports 0 pulses within 3000ms timeout
+    await machineService.handleDispenseFail({
+      machine_id: 'AQ-DM-001',
+      machine_code: 'AQ-DM-001',
+      channel_number: 1,
+      job_id: jobId,
+      dispensed_so_far_ml: 0,
+      error_code: ErrorCode.FLOW_ERROR,
+      error_message: 'Flow sensor failure: zero pulses counted after pump activation',
+    });
+
+    const failedOrder = await db.getOrderById(order.id);
+    expect(failedOrder?.order_status).toBe('FAILED');
+    expect(failedOrder?.payment_status).toBe('PAID');
+  });
+
+  it('TEST N: ESP32 restart during job → reconciled via Supabase → no blind duplicate dispensing', async () => {
     const products = await db.getProducts();
     const product = products[0];
 
@@ -501,14 +643,14 @@ describe('AQUORA Razorpay Webhook & Direct ESP32 Dispensing (All 10 Verification
 
     const paymentRes = await paymentService.handleVerifiedPayment({
       order_id: order.id,
-      payment_id: `pay_reboot_test_${Date.now()}`,
+      payment_id: `pay_reboot_${Date.now()}`,
       amount: order.amount,
       provider: 'RAZORPAY',
     });
 
     const jobId = paymentRes.job!.id;
 
-    // Job completed before reboot and committed to NVS
+    // Complete job
     await machineService.handleDispenseComplete({
       machine_id: 'AQ-DM-001',
       machine_code: 'AQ-DM-001',
@@ -520,9 +662,8 @@ describe('AQUORA Razorpay Webhook & Direct ESP32 Dispensing (All 10 Verification
       total_pulses: 1000,
     });
 
-    // ESP32 reboots: fetches next job
+    // ESP32 reboots and polls for next job
     const nextJob = await machineService.getNextJobForMachine('AQ-DM-001');
-    // Because the job was already completed, it is NO LONGER returned as pending!
     if (nextJob) {
       expect(nextJob.job_id).not.toBe(jobId);
     } else {

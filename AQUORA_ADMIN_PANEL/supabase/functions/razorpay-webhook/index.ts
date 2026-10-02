@@ -78,7 +78,10 @@ serve(async (req: Request) => {
   if (!RAZORPAY_WEBHOOK_SECRET) {
     console.error("[CRITICAL] RAZORPAY_WEBHOOK_SECRET environment variable is missing on server");
     return new Response(
-      JSON.stringify({ error: "Server webhook configuration error" }),
+      JSON.stringify({
+        error: "Server webhook configuration error",
+        message: "RAZORPAY_WEBHOOK_SECRET must be configured in Supabase Edge Function Secrets",
+      }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
@@ -166,25 +169,27 @@ serve(async (req: Request) => {
     // 7. Handle Payment Success Events: payment.captured or order.paid
     if (event === "payment.captured" || event === "order.paid") {
       const paymentEntity = payload.payload?.payment?.entity;
-      if (!paymentEntity) {
+      const orderEntity = payload.payload?.order?.entity;
+
+      if (!paymentEntity && !orderEntity) {
         await supabase
           .from("webhook_events")
-          .update({ status: "FAILED", error_message: "Missing payment entity in payload" })
+          .update({ status: "FAILED", error_message: "Missing payment and order entities in payload" })
           .eq("razorpay_event_id", eventId);
         return new Response(
-          JSON.stringify({ error: "Missing payment entity in payload" }),
+          JSON.stringify({ error: "Missing payment and order entities in payload" }),
           { status: 400, headers: { "Content-Type": "application/json" } }
         );
       }
 
-      const providerPaymentId = paymentEntity.id;
-      const providerOrderId = paymentEntity.order_id || null;
-      const amountPaise = paymentEntity.amount; // e.g. 2500 paise
-      const amountInr = amountPaise / 100; // e.g. 25.00 INR
+      const providerPaymentId = paymentEntity?.id || null;
+      const providerOrderId = paymentEntity?.order_id || orderEntity?.id || null;
+      const amountPaise = paymentEntity?.amount || orderEntity?.amount || 0;
+      const amountInr = amountPaise / 100;
 
       // Match order by notes.order_id or order_number or payments lookup
-      let orderId = paymentEntity.notes?.order_id;
-      let orderNumber = paymentEntity.notes?.order_number;
+      let orderId = paymentEntity?.notes?.order_id || orderEntity?.notes?.order_id;
+      let orderNumber = paymentEntity?.notes?.order_number || orderEntity?.notes?.order_number;
 
       let order: any = null;
 
@@ -223,12 +228,12 @@ serve(async (req: Request) => {
       }
 
       if (!order) {
-        console.error(`[WEBHOOK] Order not found for payment: ${providerPaymentId}`);
+        console.error(`[WEBHOOK] Order not found for payment: ${providerPaymentId || providerOrderId}`);
         await supabase
           .from("webhook_events")
           .update({
             status: "FAILED",
-            error_message: `Order not found for payment ${providerPaymentId}`,
+            error_message: `Order not found for payment ${providerPaymentId || providerOrderId}`,
           })
           .eq("razorpay_event_id", eventId);
 
@@ -276,10 +281,10 @@ serve(async (req: Request) => {
           .update({
             status: "PAID",
             provider: "RAZORPAY",
-            provider_payment_id: providerPaymentId,
-            provider_order_id: providerOrderId,
+            provider_payment_id: providerPaymentId || undefined,
+            provider_order_id: providerOrderId || undefined,
             amount: amountInr,
-            gateway_response: paymentEntity,
+            gateway_response: paymentEntity || orderEntity,
           })
           .eq("id", existingPayment.id);
       } else {
@@ -292,7 +297,7 @@ serve(async (req: Request) => {
           amount: amountInr,
           currency: "INR",
           status: "PAID",
-          gateway_response: paymentEntity,
+          gateway_response: paymentEntity || orderEntity,
         });
       }
 
@@ -308,6 +313,7 @@ serve(async (req: Request) => {
         .eq("id", order.id);
 
       // 11. Create Exactly ONE Dispense Job for System 2 ESP32
+      // Strong cross-event idempotency: check if dispense job ALREADY exists for this order
       const { data: existingJob } = await supabase
         .from("dispense_jobs")
         .select("id, status")
@@ -324,11 +330,31 @@ serve(async (req: Request) => {
 
         const targetChannel = item?.channel_id || 1;
         const targetVolume = item?.volume_ml || 100;
-        const productId = item?.product_id;
+        let productId = item?.product_id;
+
+        if (!productId) {
+          // Look up product assigned to this channel from machine_channels or products
+          const { data: channelData } = await supabase
+            .from("machine_channels")
+            .select("product_id")
+            .eq("channel_number", targetChannel)
+            .maybeSingle();
+          productId = channelData?.product_id;
+        }
+
+        if (!productId) {
+          const { data: defaultProduct } = await supabase
+            .from("products")
+            .select("id")
+            .eq("channel_id", targetChannel)
+            .maybeSingle();
+          productId = defaultProduct?.id;
+        }
+
         const machineCode = order.machine_code || "AQ-DM-001";
         const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
-        // Cryptographic signature for machine validation
+        // Cryptographic signature for System 2 machine validation
         const jobSignature = await generateJobSignature(
           order.id,
           machineCode,
@@ -367,7 +393,7 @@ serve(async (req: Request) => {
           console.log(`[WEBHOOK] Dispense Job created: ${createdJobId} for Order: ${order.id}`);
         }
       } else {
-        console.log(`[WEBHOOK] Dispense job already exists for order ${order.id}: ${existingJob.id}`);
+        console.log(`[WEBHOOK] Dispense job already exists for order ${order.id}: ${existingJob.id} (Reconciled)`);
       }
 
       // Mark webhook event as PROCESSED
@@ -385,7 +411,8 @@ serve(async (req: Request) => {
           order_id: order.id,
           payment_status: "PAID",
           dispense_job_id: createdJobId,
-          job_status: "QUEUED",
+          job_status: existingJob ? existingJob.status : "QUEUED",
+          note: existingJob ? "Dispense job already existed; reconciled successfully" : "New dispense job queued",
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
