@@ -14,22 +14,24 @@ if (fs.existsSync(outDir)) {
 }
 fs.mkdirSync(outDir, { recursive: true });
 
-// 1. Copy Public Customer Web (apps/payment-terminal/dist) -> dist/
-if (fs.existsSync(terminalDist)) {
-  fs.cpSync(terminalDist, outDir, { recursive: true });
-  console.log('✓ Public Customer Web App copied to root /');
+// 1. Copy Public Customer Web -> dist/
+const publicWebDist = fs.existsSync(terminalDist) ? terminalDist : path.join(rootDir, 'AQUORA_PUBLIC_WEB', 'dist');
+if (fs.existsSync(publicWebDist)) {
+  fs.cpSync(publicWebDist, outDir, { recursive: true });
+  console.log(`✓ Public Customer Web App copied to root / (from ${path.relative(rootDir, publicWebDist)})`);
 } else {
-  console.warn('⚠️ payment-terminal/dist not found');
+  console.warn('⚠️ Public Web dist not found');
 }
 
-// 2. Copy Admin Dashboard (apps/admin-dashboard/dist) -> dist/admin/
+// 2. Copy Admin Dashboard -> dist/admin/
 const adminOutDir = path.join(outDir, 'admin');
-if (fs.existsSync(adminDist)) {
+const adminSrcDist = fs.existsSync(adminDist) ? adminDist : path.join(rootDir, 'AQUORA_ADMIN_PANEL', 'frontend', 'dist');
+if (fs.existsSync(adminSrcDist)) {
   fs.mkdirSync(adminOutDir, { recursive: true });
-  fs.cpSync(adminDist, adminOutDir, { recursive: true });
-  console.log('✓ Admin Dashboard copied to /admin');
+  fs.cpSync(adminSrcDist, adminOutDir, { recursive: true });
+  console.log(`✓ Admin Dashboard copied to /admin (from ${path.relative(rootDir, adminSrcDist)})`);
 } else {
-  console.warn('⚠️ admin-dashboard/dist not found');
+  console.warn('⚠️ Admin Dashboard dist not found');
 }
 
 console.log('✨ Unified Vercel production build ready at dist/');
