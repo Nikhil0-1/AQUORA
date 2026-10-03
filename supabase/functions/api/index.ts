@@ -7,27 +7,35 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "
 
 function cleanCredential(val: string | undefined | null): string {
   if (!val) return "";
-  let s = val.trim();
+  let s = val.replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
   if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
     s = s.slice(1, -1).trim();
   }
-  return s;
+  return s.replace(/\s+/g, "");
 }
 
 function toBasicAuth(user: string, pass: string): string {
-  const encoder = new TextEncoder();
-  const bytes = encoder.encode(`${user}:${pass}`);
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return "Basic " + btoa(binary);
+  return "Basic " + btoa(`${user}:${pass}`);
 }
 
 function getRazorpayCredentials() {
-  const rawKeyId = Deno.env.get("RAZORPAY_KEY_ID") || Deno.env.get("RZP_KEY_ID") || Deno.env.get("RAZORPAY_KEY");
-  const rawKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET") || Deno.env.get("RZP_KEY_SECRET") || Deno.env.get("RAZORPAY_SECRET");
-  const rawWebhookSecret = Deno.env.get("RAZORPAY_WEBHOOK_SECRET") || Deno.env.get("RZP_WEBHOOK_SECRET");
+  const rawKeyId =
+    Deno.env.get("RAZORPAY_KEY_ID") ||
+    Deno.env.get("RZP_KEY_ID") ||
+    Deno.env.get("RAZORPAY_KEY") ||
+    Deno.env.get("VITE_RAZORPAY_KEY_ID") ||
+    Deno.env.get("NEXT_PUBLIC_RAZORPAY_KEY_ID");
+
+  const rawKeySecret =
+    Deno.env.get("RAZORPAY_KEY_SECRET") ||
+    Deno.env.get("RZP_KEY_SECRET") ||
+    Deno.env.get("RAZORPAY_SECRET") ||
+    Deno.env.get("RAZORPAY_API_SECRET");
+
+  const rawWebhookSecret =
+    Deno.env.get("RAZORPAY_WEBHOOK_SECRET") ||
+    Deno.env.get("RZP_WEBHOOK_SECRET") ||
+    Deno.env.get("RAZORPAY_WEBHOOK");
 
   const keyId = cleanCredential(rawKeyId);
   const keySecret = cleanCredential(rawKeySecret);
