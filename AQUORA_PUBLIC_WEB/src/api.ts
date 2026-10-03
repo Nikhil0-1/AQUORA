@@ -130,35 +130,51 @@ class PublicApiClient {
     return mockOrder;
   }
 
-  async processPayment(orderId: string): Promise<{ success: boolean; order: Order }> {
-    try {
-      const res = await fetch(`${this.baseUrl}/api/v1/payments/process`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order_id: orderId }),
-      });
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch (e) {
-      console.warn('Payment endpoint fallback:', e);
+  /**
+   * Initiate Razorpay Payment using server-calculated amount
+   */
+  async createPayment(orderId: string): Promise<{
+    success: boolean;
+    order_id: string;
+    order_number: string;
+    amount: number;
+    amount_paise: number;
+    currency: string;
+    provider_order_id: string;
+    razorpay_key_id: string;
+    qr_code_data?: string;
+  }> {
+    const res = await fetch(`${this.baseUrl}/api/v1/payments/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order_id: orderId, provider: 'RAZORPAY' }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Failed to initiate payment session' }));
+      throw new Error(err.message || 'Payment initiation failed');
     }
+    return await res.json();
+  }
 
-    return {
-      success: true,
-      order: {
-        id: orderId,
-        order_number: `AQUORA-ORD-${orderId.slice(-6)}`,
-        machine_code: 'AQ-DM-001',
-        amount: 35.0,
-        currency: 'INR',
-        payment_status: 'PAID',
-        order_status: 'QUEUED',
-        source: 'PUBLIC_WEB',
-        items: [],
-        created_at: new Date().toISOString(),
-      },
-    };
+  /**
+   * Cryptographically verify Razorpay payment on server before any dispensing
+   */
+  async verifyPayment(payload: {
+    order_id: string;
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }): Promise<{ success: boolean; order_id: string; payment_status: string; order_status: string; job_id?: string }> {
+    const res = await fetch(`${this.baseUrl}/api/v1/payments/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Payment verification failed' }));
+      throw new Error(err.message || 'Payment verification failed');
+    }
+    return await res.json();
   }
 
   async getOrder(orderId: string): Promise<Order | null> {

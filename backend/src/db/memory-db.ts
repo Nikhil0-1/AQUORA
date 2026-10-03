@@ -575,8 +575,11 @@ export class MemoryDatabase implements IDatabase {
     channelNumber: number,
     volumeMl: number
   ): Promise<InventoryItem | null> {
+    const targetMachine = this.machines.find((m) => m.id === machineId || m.machine_code === machineId);
+    const targetMachineId = targetMachine ? targetMachine.id : machineId;
+
     const inv = this.inventory.find(
-      (i) => i.machine_id === machineId && i.channel_number === channelNumber
+      (i) => (i.machine_id === targetMachineId || (i as any).machine_code === machineId) && i.channel_number === channelNumber
     );
     if (!inv) return null;
     inv.current_volume_ml = Math.max(0, inv.current_volume_ml - volumeMl);
@@ -592,9 +595,8 @@ export class MemoryDatabase implements IDatabase {
     inv.updated_at = new Date().toISOString();
 
     // Also update machine channel level
-    const machine = this.machines.find((m) => m.id === machineId);
-    if (machine) {
-      const ch = machine.channels.find((c) => c.channel_number === channelNumber);
+    if (targetMachine) {
+      const ch = targetMachine.channels.find((c) => c.channel_number === channelNumber);
       if (ch) {
         ch.current_level_ml = inv.current_volume_ml;
         ch.stock_status = inv.status;

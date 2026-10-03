@@ -37,17 +37,12 @@ export function CheckoutPage() {
         items: items.map(i => ({ product_id: i.product.id, quantity: i.quantity, volume_ml: i.volume_ml || 250 }))
       });
 
-      // 2. Process Payment (Mock or Gateway)
-      const paymentResult = await api.processMockPayment({ order_id: order.id });
+      // 2. Initiate Payment Session
+      const paymentData = await api.createPayment(order.id);
 
-      if (paymentResult.success && paymentResult.order) {
-        // Clear cart
-        clearCart();
-        // Redirect to success / tracking page
-        navigate(`/order/${order.id}`);
-      } else {
-        setError("Payment failed. Please try again.");
-      }
+      // 3. Clear cart and navigate to live tracking page (awaiting webhook or terminal scan)
+      clearCart();
+      navigate(`/order/${order.id}`);
     } catch (err: any) {
       console.error(err);
       setError(err.message || "An error occurred during checkout.");

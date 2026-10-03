@@ -73,6 +73,49 @@ export class AquoraApiClient {
     return this.request<Order>(`/api/v1/orders/${orderId}`);
   }
 
+  async getOrderStatus(orderId: string): Promise<{
+    order_id: string;
+    order_number: string;
+    payment_status: string;
+    order_status: string;
+    amount: number;
+    currency: string;
+    dispensed_at?: string | null;
+    expires_at: string;
+    is_expired: boolean;
+  }> {
+    return this.request(`/api/v1/orders/${orderId}/status`);
+  }
+
+  async createPayment(orderId: string): Promise<{
+    success: boolean;
+    order_id: string;
+    order_number: string;
+    amount: number;
+    amount_paise: number;
+    currency: string;
+    provider_order_id: string;
+    razorpay_key_id: string;
+    qr_code_data?: string;
+  }> {
+    return this.request('/api/v1/payments/create', {
+      method: 'POST',
+      body: JSON.stringify({ order_id: orderId, provider: 'RAZORPAY' }),
+    });
+  }
+
+  async verifyPayment(payload: {
+    order_id: string;
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }): Promise<{ success: boolean; order_id: string; payment_status: string; order_status: string; job_id?: string }> {
+    return this.request('/api/v1/payments/verify', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   async processMockPayment(payload: {
     order_id?: string;
     job_id?: string;

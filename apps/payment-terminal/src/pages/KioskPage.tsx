@@ -184,28 +184,22 @@ export function KioskPage() {
     }
   };
 
-  const handleSimulatePaymentSuccess = async () => {
+  const handleVerifyPaymentStatus = async () => {
     if (!currentOrder) return;
     setLoading(true);
     setErrorMsg(null);
     try {
-      // Server-side payment verification & dispense job authorization
-      const result = await api.processMockPayment({
-        order_id: currentOrder.id,
-        simulate_result: 'SUCCESS',
-        payment_method: 'UPI_RAZORPAY',
-      });
+      // Query server for genuine verified payment and order status
+      const statusResult = await api.getOrderStatus(currentOrder.id);
 
-      if (result.success) {
+      if (statusResult.payment_status === 'PAID') {
         setStep('DISPENSING');
         startDispensingTelemetryPolling(currentOrder.id);
       } else {
-        setStep('FAILED');
-        setErrorMsg('Payment verification failed. No sanitizer was dispensed.');
+        setErrorMsg('Payment not yet detected by Razorpay gateway. Please scan QR and complete UPI payment.');
       }
     } catch (err: any) {
-      setStep('FAILED');
-      setErrorMsg(err.message || 'Payment failure.');
+      setErrorMsg(err.message || 'Error checking payment status.');
     } finally {
       setLoading(false);
     }
@@ -532,16 +526,16 @@ export function KioskPage() {
                 </div>
 
                 <button 
-                  onClick={handleSimulatePaymentSuccess}
+                  onClick={handleVerifyPaymentStatus}
                   disabled={loading}
-                  className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm rounded-xl shadow-lg shadow-emerald-500/20 flex items-center justify-center space-x-2"
+                  className="w-full py-3 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-sm rounded-xl shadow-lg shadow-cyan-500/20 flex items-center justify-center space-x-2"
                 >
                   {loading ? (
                     <RefreshCw className="w-5 h-5 animate-spin" />
                   ) : (
                     <>
                       <CheckCircle2 className="w-5 h-5" />
-                      <span>SIMULATE SUCCESSFUL PAYMENT</span>
+                      <span>CHECK PAYMENT STATUS</span>
                     </>
                   )}
                 </button>

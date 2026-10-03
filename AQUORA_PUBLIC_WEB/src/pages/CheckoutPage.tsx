@@ -33,13 +33,28 @@ export function CheckoutPage({ cart, onClearCart }: Props) {
 
   const subtotal = cart.reduce((sum, item) => sum + item.unit_price * item.quantity, 0);
 
+  const loadRazorpayScript = (): Promise<boolean> => {
+    return new Promise((resolve) => {
+      if ((window as any).Razorpay) {
+        resolve(true);
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.async = true;
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
   const handlePayAndOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
     try {
-      // 1. Create Server-Authoritative Order
+      // 1. Create Server-Authoritative Order (Server calculates price & inventory)
       const order = await publicApi.createOrder({
         customer_name: customerName || 'Online Guest',
         customer_phone: customerPhone,
@@ -51,19 +66,77 @@ export function CheckoutPage({ cart, onClearCart }: Props) {
         })),
       });
 
-      // 2. Process Payment via Gateway / Test pipeline
-      const paymentResult = await publicApi.processPayment(order.id);
+      // 2. Request Server-Generated Payment Session
+      const paymentData = await publicApi.createPayment(order.id);
 
-      if (paymentResult.success) {
-        onClearCart();
-        navigate(`/order/${order.id}`);
-      } else {
-        setError('Payment authorization could not be completed. Please try again.');
+      // 3. Load Razorpay Checkout SDK
+      const isLoaded = await loadRazorpayScript();
+      if (!isLoaded || !(window as any).Razorpay) {
+        throw new Error('Razorpay Checkout SDK could not be loaded. Please verify your connection.');
       }
+
+      // 4. Open Razorpay Checkout Modal
+      const options = {
+        key: paymentData.razorpay_key_id,
+        amount: paymentData.amount_paise,
+        currency: paymentData.currency || 'INR',
+        name: 'AQUORA Smart Sanitizer',
+        description: `Order ${order.order_number} · Station AQ-DM-001`,
+        order_id: paymentData.provider_order_id,
+        prefill: {
+          name: customerName || 'AQUORA Customer',
+          contact: customerPhone || '',
+        },
+        notes: {
+          order_id: order.id,
+          order_number: order.order_number,
+          machine_code: 'AQ-DM-001',
+        },
+        theme: {
+          color: '#06b6d4',
+        },
+        modal: {
+          ondismiss: () => {
+            // USER CANCELLED / CLOSED MODAL: Absolutely NO dispensing permitted!
+            setLoading(false);
+            setError('Payment cancelled or closed. Your order has NOT been paid and no sanitizer will be dispensed.');
+          },
+        },
+        handler: async (response: any) => {
+          try {
+            setLoading(true);
+            // 5. Authoritative Backend Payment Verification
+            const verifyResult = await publicApi.verifyPayment({
+              order_id: order.id,
+              razorpay_order_id: response.razorpay_order_id || paymentData.provider_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature || 'dev_mock_signature',
+            });
+
+            if (verifyResult.success) {
+              onClearCart();
+              navigate(`/order/${order.id}`);
+            } else {
+              setError('Payment verification rejected by backend. Dispense job was not authorized.');
+            }
+          } catch (verifyErr: any) {
+            console.error('Verification error:', verifyErr);
+            setError(verifyErr.message || 'Payment verification failed on server.');
+          } finally {
+            setLoading(false);
+          }
+        },
+      };
+
+      const rzp = new (window as any).Razorpay(options);
+      rzp.on('payment.failed', (failResp: any) => {
+        setLoading(false);
+        setError(`Payment failed: ${failResp.error?.description || 'Transaction declined'}. No sanitizer will be dispensed.`);
+      });
+      rzp.open();
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Error occurred while creating order.');
-    } finally {
+      setError(err.message || 'Error occurred while initiating checkout.');
       setLoading(false);
     }
   };
