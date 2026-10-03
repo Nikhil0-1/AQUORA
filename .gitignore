@@ -36,6 +36,9 @@ secrets.h
 
 # === Supabase Local ===
 .supabase/
+supabase/.temp/
+.temp/
+
 
 # === Arduino IDE / ESP32 Build Artifacts ===
 *.hex

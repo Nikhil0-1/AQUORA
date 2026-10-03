@@ -3,10 +3,10 @@
   "cleanUrls": true,
   "trailingSlash": false,
   "rewrites": [
-    { "source": "/health", "destination": "/api/health" },
-    { "source": "/api/health", "destination": "/api/health" },
-    { "source": "/api/(.*)", "destination": "/api/[...all]" },
-    { "source": "/api", "destination": "/api/index" },
+    { "source": "/health", "destination": "https://vxcqywbycvasmjngolps.supabase.co/functions/v1/api/health" },
+    { "source": "/api/health", "destination": "https://vxcqywbycvasmjngolps.supabase.co/functions/v1/api/health" },
+    { "source": "/api/v1/:match*", "destination": "https://vxcqywbycvasmjngolps.supabase.co/functions/v1/api/v1/:match*" },
+    { "source": "/api/:match*", "destination": "https://vxcqywbycvasmjngolps.supabase.co/functions/v1/api/:match*" },
     { "source": "/admin/(.*)", "destination": "/admin/index.html" },
     { "source": "/admin", "destination": "/admin/index.html" },
     { "source": "/(.*)", "destination": "/index.html" }

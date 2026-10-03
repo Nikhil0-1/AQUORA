@@ -1,8 +1,8 @@
 import { Product, Order } from './types';
 
-// In production, requests to /api/v1/... and /health are relative to current origin.
-// In local development, vite.config.ts proxies /api and /health to http://localhost:3001.
-const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || (import.meta as any).env?.VITE_API_BASE_URL || '';
+// Authoritative AQUORA Cloud Backend on Supabase Edge Runtime
+const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || (import.meta as any).env?.VITE_API_URL || 'https://vxcqywbycvasmjngolps.supabase.co/functions/v1/api';
+
 
 const FALLBACK_PRODUCTS: Product[] = [
   {

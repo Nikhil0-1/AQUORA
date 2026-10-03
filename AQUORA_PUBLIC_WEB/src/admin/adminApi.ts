@@ -5,7 +5,7 @@
 
 import { Product, ProductVariant, Category, Order, Machine, InventoryItem } from './adminTypes';
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || (import.meta as any).env?.VITE_API_URL || '';
+const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || (import.meta as any).env?.VITE_API_URL || 'https://vxcqywbycvasmjngolps.supabase.co/functions/v1/api';
 
 export class AquoraApiClient {
   private baseUrl: string;
