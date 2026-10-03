@@ -14038,7 +14038,7 @@ var require_mime_types = __commonJS({
     exports2.charset = charset;
     exports2.charsets = { lookup: charset };
     exports2.contentType = contentType;
-    exports2.extension = extension2;
+    exports2.extension = extension;
     exports2.extensions = /* @__PURE__ */ Object.create(null);
     exports2.lookup = lookup;
     exports2.types = /* @__PURE__ */ Object.create(null);
@@ -14071,7 +14071,7 @@ var require_mime_types = __commonJS({
       }
       return mime;
     }
-    function extension2(type) {
+    function extension(type) {
       if (!type || typeof type !== "string") {
         return false;
       }
@@ -14086,11 +14086,11 @@ var require_mime_types = __commonJS({
       if (!path || typeof path !== "string") {
         return false;
       }
-      var extension3 = extname("x." + path).toLowerCase().substr(1);
-      if (!extension3) {
+      var extension2 = extname("x." + path).toLowerCase().substr(1);
+      if (!extension2) {
         return false;
       }
-      return exports2.types[extension3] || false;
+      return exports2.types[extension2] || false;
     }
     function populateMaps(extensions, types) {
       var preference = ["nginx", "apache", void 0, "iana"];
@@ -14102,15 +14102,15 @@ var require_mime_types = __commonJS({
         }
         extensions[type] = exts;
         for (var i = 0; i < exts.length; i++) {
-          var extension3 = exts[i];
-          if (types[extension3]) {
-            var from = preference.indexOf(db4[types[extension3]].source);
+          var extension2 = exts[i];
+          if (types[extension2]) {
+            var from = preference.indexOf(db4[types[extension2]].source);
             var to = preference.indexOf(mime.source);
-            if (types[extension3] !== "application/octet-stream" && (from > to || from === to && types[extension3].substr(0, 12) === "application/")) {
+            if (types[extension2] !== "application/octet-stream" && (from > to || from === to && types[extension2].substr(0, 12) === "application/")) {
               continue;
             }
           }
-          types[extension3] = type;
+          types[extension2] = type;
         }
       });
     }
@@ -20837,8 +20837,8 @@ var require_application = __commonJS({
       if (typeof fn !== "function") {
         throw new Error("callback function required");
       }
-      var extension2 = ext[0] !== "." ? "." + ext : ext;
-      this.engines[extension2] = fn;
+      var extension = ext[0] !== "." ? "." + ext : ext;
+      this.engines[extension] = fn;
       return this;
     };
     app2.param = function param(name, fn) {
@@ -23502,7 +23502,7 @@ var require_permessage_deflate = __commonJS({
     var kBuffers = /* @__PURE__ */ Symbol("buffers");
     var kError = /* @__PURE__ */ Symbol("error");
     var zlibLimiter;
-    var PerMessageDeflate2 = class {
+    var PerMessageDeflate = class {
       /**
        * Creates a PerMessageDeflate instance.
        *
@@ -23840,7 +23840,7 @@ var require_permessage_deflate = __commonJS({
         });
       }
     };
-    module2.exports = PerMessageDeflate2;
+    module2.exports = PerMessageDeflate;
     function deflateOnData(chunk) {
       this[kBuffers].push(chunk);
       this[kTotalLength] += chunk.length;
@@ -24075,7 +24075,7 @@ var require_receiver = __commonJS({
   "node_modules/ws/lib/receiver.js"(exports2, module2) {
     "use strict";
     var { Writable } = require("stream");
-    var PerMessageDeflate2 = require_permessage_deflate();
+    var PerMessageDeflate = require_permessage_deflate();
     var {
       BINARY_TYPES,
       EMPTY_BUFFER,
@@ -24092,7 +24092,7 @@ var require_receiver = __commonJS({
     var GET_DATA = 4;
     var INFLATING = 5;
     var DEFER_EVENT = 6;
-    var Receiver2 = class extends Writable {
+    var Receiver = class extends Writable {
       /**
        * Creates a Receiver instance.
        *
@@ -24261,7 +24261,7 @@ var require_receiver = __commonJS({
           return;
         }
         const compressed = (buf[0] & 64) === 64;
-        if (compressed && !this._extensions[PerMessageDeflate2.extensionName]) {
+        if (compressed && !this._extensions[PerMessageDeflate.extensionName]) {
           const error = this.createError(
             RangeError,
             "RSV1 must be clear",
@@ -24516,7 +24516,7 @@ var require_receiver = __commonJS({
        * @private
        */
       decompress(data, cb) {
-        const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
+        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
         perMessageDeflate.decompress(data, this._fin, (err, buf) => {
           if (err) return cb(err);
           if (buf.length) {
@@ -24689,7 +24689,7 @@ var require_receiver = __commonJS({
         return err;
       }
     };
-    module2.exports = Receiver2;
+    module2.exports = Receiver;
   }
 });
 
@@ -24702,7 +24702,7 @@ var require_sender = __commonJS({
     var {
       types: { isUint8Array }
     } = require("util");
-    var PerMessageDeflate2 = require_permessage_deflate();
+    var PerMessageDeflate = require_permessage_deflate();
     var { EMPTY_BUFFER, kWebSocket, NOOP } = require_constants();
     var { isBlob, isValidStatusCode } = require_validation();
     var { mask: applyMask, toBuffer } = require_buffer_util();
@@ -24714,7 +24714,7 @@ var require_sender = __commonJS({
     var DEFAULT = 0;
     var DEFLATING = 1;
     var GET_BLOB_DATA = 2;
-    var Sender2 = class _Sender {
+    var Sender = class _Sender {
       /**
        * Creates a Sender instance.
        *
@@ -24988,7 +24988,7 @@ var require_sender = __commonJS({
        * @public
        */
       send(data, options, cb) {
-        const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
+        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
         let opcode = options.binary ? 2 : 1;
         let rsv1 = options.compress;
         let byteLength;
@@ -25112,7 +25112,7 @@ var require_sender = __commonJS({
           this.sendFrame(_Sender.frame(data, options), cb);
           return;
         }
-        const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
+        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
         this._bufferedBytes += options[kByteLength];
         this._state = DEFLATING;
         perMessageDeflate.compress(data, options.fin, (_, buf) => {
@@ -25170,7 +25170,7 @@ var require_sender = __commonJS({
         }
       }
     };
-    module2.exports = Sender2;
+    module2.exports = Sender;
     function callCallbacks(sender, err, cb) {
       if (typeof cb === "function") cb(err);
       for (let i = 0; i < sender._queue.length; i++) {
@@ -25550,11 +25550,11 @@ var require_extension = __commonJS({
       return offers;
     }
     function format(extensions) {
-      return Object.keys(extensions).map((extension2) => {
-        let configurations = extensions[extension2];
+      return Object.keys(extensions).map((extension) => {
+        let configurations = extensions[extension];
         if (!Array.isArray(configurations)) configurations = [configurations];
         return configurations.map((params) => {
-          return [extension2].concat(
+          return [extension].concat(
             Object.keys(params).map((k) => {
               let values = params[k];
               if (!Array.isArray(values)) values = [values];
@@ -25580,9 +25580,9 @@ var require_websocket = __commonJS({
     var { randomBytes: randomBytes2, createHash } = require("crypto");
     var { Duplex, Readable } = require("stream");
     var { URL: URL2 } = require("url");
-    var PerMessageDeflate2 = require_permessage_deflate();
-    var Receiver2 = require_receiver();
-    var Sender2 = require_sender();
+    var PerMessageDeflate = require_permessage_deflate();
+    var Receiver = require_receiver();
+    var Sender = require_sender();
     var { isBlob } = require_validation();
     var {
       BINARY_TYPES,
@@ -25604,7 +25604,7 @@ var require_websocket = __commonJS({
     var protocolVersions = [8, 13];
     var readyStates = ["CONNECTING", "OPEN", "CLOSING", "CLOSED"];
     var subprotocolRegex = /^[!#$%&'*+\-.0-9A-Z^_`|a-z~]+$/;
-    var WebSocket2 = class _WebSocket extends EventEmitter {
+    var WebSocket = class _WebSocket extends EventEmitter {
       /**
        * Create a new `WebSocket`.
        *
@@ -25749,7 +25749,7 @@ var require_websocket = __commonJS({
        * @private
        */
       setSocket(socket, head, options) {
-        const receiver = new Receiver2({
+        const receiver = new Receiver({
           allowSynchronousEvents: options.allowSynchronousEvents,
           binaryType: this.binaryType,
           extensions: this._extensions,
@@ -25759,7 +25759,7 @@ var require_websocket = __commonJS({
           maxPayload: options.maxPayload,
           skipUTF8Validation: options.skipUTF8Validation
         });
-        const sender = new Sender2(socket, this._extensions, options.generateMask);
+        const sender = new Sender(socket, this._extensions, options.generateMask);
         this._receiver = receiver;
         this._sender = sender;
         this._socket = socket;
@@ -25794,8 +25794,8 @@ var require_websocket = __commonJS({
           this.emit("close", this._closeCode, this._closeMessage);
           return;
         }
-        if (this._extensions[PerMessageDeflate2.extensionName]) {
-          this._extensions[PerMessageDeflate2.extensionName].cleanup();
+        if (this._extensions[PerMessageDeflate.extensionName]) {
+          this._extensions[PerMessageDeflate.extensionName].cleanup();
         }
         this._receiver.removeAllListeners();
         this._readyState = _WebSocket.CLOSED;
@@ -25957,7 +25957,7 @@ var require_websocket = __commonJS({
           fin: true,
           ...options
         };
-        if (!this._extensions[PerMessageDeflate2.extensionName]) {
+        if (!this._extensions[PerMessageDeflate.extensionName]) {
           opts.compress = false;
         }
         this._sender.send(data || EMPTY_BUFFER, opts, cb);
@@ -25980,35 +25980,35 @@ var require_websocket = __commonJS({
         }
       }
     };
-    Object.defineProperty(WebSocket2, "CONNECTING", {
+    Object.defineProperty(WebSocket, "CONNECTING", {
       enumerable: true,
       value: readyStates.indexOf("CONNECTING")
     });
-    Object.defineProperty(WebSocket2.prototype, "CONNECTING", {
+    Object.defineProperty(WebSocket.prototype, "CONNECTING", {
       enumerable: true,
       value: readyStates.indexOf("CONNECTING")
     });
-    Object.defineProperty(WebSocket2, "OPEN", {
+    Object.defineProperty(WebSocket, "OPEN", {
       enumerable: true,
       value: readyStates.indexOf("OPEN")
     });
-    Object.defineProperty(WebSocket2.prototype, "OPEN", {
+    Object.defineProperty(WebSocket.prototype, "OPEN", {
       enumerable: true,
       value: readyStates.indexOf("OPEN")
     });
-    Object.defineProperty(WebSocket2, "CLOSING", {
+    Object.defineProperty(WebSocket, "CLOSING", {
       enumerable: true,
       value: readyStates.indexOf("CLOSING")
     });
-    Object.defineProperty(WebSocket2.prototype, "CLOSING", {
+    Object.defineProperty(WebSocket.prototype, "CLOSING", {
       enumerable: true,
       value: readyStates.indexOf("CLOSING")
     });
-    Object.defineProperty(WebSocket2, "CLOSED", {
+    Object.defineProperty(WebSocket, "CLOSED", {
       enumerable: true,
       value: readyStates.indexOf("CLOSED")
     });
-    Object.defineProperty(WebSocket2.prototype, "CLOSED", {
+    Object.defineProperty(WebSocket.prototype, "CLOSED", {
       enumerable: true,
       value: readyStates.indexOf("CLOSED")
     });
@@ -26021,10 +26021,10 @@ var require_websocket = __commonJS({
       "readyState",
       "url"
     ].forEach((property) => {
-      Object.defineProperty(WebSocket2.prototype, property, { enumerable: true });
+      Object.defineProperty(WebSocket.prototype, property, { enumerable: true });
     });
     ["open", "error", "close", "message"].forEach((method) => {
-      Object.defineProperty(WebSocket2.prototype, `on${method}`, {
+      Object.defineProperty(WebSocket.prototype, `on${method}`, {
         enumerable: true,
         get() {
           for (const listener of this.listeners(method)) {
@@ -26046,9 +26046,9 @@ var require_websocket = __commonJS({
         }
       });
     });
-    WebSocket2.prototype.addEventListener = addEventListener;
-    WebSocket2.prototype.removeEventListener = removeEventListener;
-    module2.exports = WebSocket2;
+    WebSocket.prototype.addEventListener = addEventListener;
+    WebSocket.prototype.removeEventListener = removeEventListener;
+    module2.exports = WebSocket;
     function initAsClient(websocket, address, protocols, options) {
       const opts = {
         allowSynchronousEvents: true,
@@ -26133,13 +26133,13 @@ var require_websocket = __commonJS({
       opts.path = parsedUrl.pathname + parsedUrl.search;
       opts.timeout = opts.handshakeTimeout;
       if (opts.perMessageDeflate) {
-        perMessageDeflate = new PerMessageDeflate2({
+        perMessageDeflate = new PerMessageDeflate({
           ...opts.perMessageDeflate,
           isServer: false,
           maxPayload: opts.maxPayload
         });
         opts.headers["Sec-WebSocket-Extensions"] = format({
-          [PerMessageDeflate2.extensionName]: perMessageDeflate.offer()
+          [PerMessageDeflate.extensionName]: perMessageDeflate.offer()
         });
       }
       if (protocols.length) {
@@ -26238,7 +26238,7 @@ var require_websocket = __commonJS({
       });
       req.on("upgrade", (res, socket, head) => {
         websocket.emit("upgrade", res);
-        if (websocket.readyState !== WebSocket2.CONNECTING) return;
+        if (websocket.readyState !== WebSocket.CONNECTING) return;
         req = websocket._req = null;
         const upgrade = res.headers.upgrade;
         if (upgrade === void 0 || upgrade.toLowerCase() !== "websocket") {
@@ -26282,19 +26282,19 @@ var require_websocket = __commonJS({
             return;
           }
           const extensionNames = Object.keys(extensions);
-          if (extensionNames.length !== 1 || extensionNames[0] !== PerMessageDeflate2.extensionName) {
+          if (extensionNames.length !== 1 || extensionNames[0] !== PerMessageDeflate.extensionName) {
             const message = "Server indicated an extension that was not requested";
             abortHandshake(websocket, socket, message);
             return;
           }
           try {
-            perMessageDeflate.accept(extensions[PerMessageDeflate2.extensionName]);
+            perMessageDeflate.accept(extensions[PerMessageDeflate.extensionName]);
           } catch (err) {
             const message = "Invalid Sec-WebSocket-Extensions header";
             abortHandshake(websocket, socket, message);
             return;
           }
-          websocket._extensions[PerMessageDeflate2.extensionName] = perMessageDeflate;
+          websocket._extensions[PerMessageDeflate.extensionName] = perMessageDeflate;
         }
         websocket.setSocket(socket, head, {
           allowSynchronousEvents: opts.allowSynchronousEvents,
@@ -26312,7 +26312,7 @@ var require_websocket = __commonJS({
       }
     }
     function emitErrorAndClose(websocket, err) {
-      websocket._readyState = WebSocket2.CLOSING;
+      websocket._readyState = WebSocket.CLOSING;
       websocket._errorEmitted = true;
       websocket.emit("error", err);
       websocket.emitClose();
@@ -26329,7 +26329,7 @@ var require_websocket = __commonJS({
       return tls.connect(options);
     }
     function abortHandshake(websocket, stream, message) {
-      websocket._readyState = WebSocket2.CLOSING;
+      websocket._readyState = WebSocket.CLOSING;
       const err = new Error(message);
       Error.captureStackTrace(err, abortHandshake);
       if (stream.setHeader) {
@@ -26404,9 +26404,9 @@ var require_websocket = __commonJS({
     }
     function senderOnError(err) {
       const websocket = this[kWebSocket];
-      if (websocket.readyState === WebSocket2.CLOSED) return;
-      if (websocket.readyState === WebSocket2.OPEN) {
-        websocket._readyState = WebSocket2.CLOSING;
+      if (websocket.readyState === WebSocket.CLOSED) return;
+      if (websocket.readyState === WebSocket.OPEN) {
+        websocket._readyState = WebSocket.CLOSING;
         setCloseTimer(websocket);
       }
       this._socket.end();
@@ -26426,7 +26426,7 @@ var require_websocket = __commonJS({
       this.removeListener("close", socketOnClose);
       this.removeListener("data", socketOnData);
       this.removeListener("end", socketOnEnd);
-      websocket._readyState = WebSocket2.CLOSING;
+      websocket._readyState = WebSocket.CLOSING;
       if (!this._readableState.endEmitted && !websocket._closeFrameReceived && !websocket._receiver._writableState.errorEmitted && this._readableState.length !== 0) {
         const chunk = this.read(this._readableState.length);
         websocket._receiver.write(chunk);
@@ -26448,7 +26448,7 @@ var require_websocket = __commonJS({
     }
     function socketOnEnd() {
       const websocket = this[kWebSocket];
-      websocket._readyState = WebSocket2.CLOSING;
+      websocket._readyState = WebSocket.CLOSING;
       websocket._receiver.end();
       this.end();
     }
@@ -26457,7 +26457,7 @@ var require_websocket = __commonJS({
       this.removeListener("error", socketOnError);
       this.on("error", NOOP);
       if (websocket) {
-        websocket._readyState = WebSocket2.CLOSING;
+        websocket._readyState = WebSocket.CLOSING;
         this.destroy();
       }
     }
@@ -26468,7 +26468,7 @@ var require_websocket = __commonJS({
 var require_stream = __commonJS({
   "node_modules/ws/lib/stream.js"(exports2, module2) {
     "use strict";
-    var WebSocket2 = require_websocket();
+    var WebSocket = require_websocket();
     var { Duplex } = require("stream");
     function emitClose(stream) {
       stream.emit("close");
@@ -26485,7 +26485,7 @@ var require_stream = __commonJS({
         this.emit("error", err);
       }
     }
-    function createWebSocketStream2(ws, options) {
+    function createWebSocketStream(ws, options) {
       let terminateOnDestroy = true;
       const duplex = new Duplex({
         ...options,
@@ -26558,7 +26558,7 @@ var require_stream = __commonJS({
       duplex.on("error", duplexOnError);
       return duplex;
     }
-    module2.exports = createWebSocketStream2;
+    module2.exports = createWebSocketStream;
   }
 });
 
@@ -26615,16 +26615,16 @@ var require_websocket_server = __commonJS({
     var http = require("http");
     var { Duplex } = require("stream");
     var { createHash } = require("crypto");
-    var extension2 = require_extension();
-    var PerMessageDeflate2 = require_permessage_deflate();
-    var subprotocol2 = require_subprotocol();
-    var WebSocket2 = require_websocket();
+    var extension = require_extension();
+    var PerMessageDeflate = require_permessage_deflate();
+    var subprotocol = require_subprotocol();
+    var WebSocket = require_websocket();
     var { CLOSE_TIMEOUT, GUID, kWebSocket } = require_constants();
     var keyRegex = /^[+/0-9A-Za-z]{22}==$/;
     var RUNNING = 0;
     var CLOSING = 1;
     var CLOSED = 2;
-    var WebSocketServer2 = class extends EventEmitter {
+    var WebSocketServer = class extends EventEmitter {
       /**
        * Create a `WebSocketServer` instance.
        *
@@ -26684,7 +26684,7 @@ var require_websocket_server = __commonJS({
           host: null,
           path: null,
           port: null,
-          WebSocket: WebSocket2,
+          WebSocket,
           ...options
         };
         if (options.port == null && !options.server && !options.noServer || options.port != null && (options.server || options.noServer) || options.server && options.noServer) {
@@ -26846,7 +26846,7 @@ var require_websocket_server = __commonJS({
         let protocols = /* @__PURE__ */ new Set();
         if (secWebSocketProtocol !== void 0) {
           try {
-            protocols = subprotocol2.parse(secWebSocketProtocol);
+            protocols = subprotocol.parse(secWebSocketProtocol);
           } catch (err) {
             const message = "Invalid Sec-WebSocket-Protocol header";
             abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
@@ -26856,16 +26856,16 @@ var require_websocket_server = __commonJS({
         const secWebSocketExtensions = req.headers["sec-websocket-extensions"];
         const extensions = {};
         if (this.options.perMessageDeflate && secWebSocketExtensions !== void 0) {
-          const perMessageDeflate = new PerMessageDeflate2({
+          const perMessageDeflate = new PerMessageDeflate({
             ...this.options.perMessageDeflate,
             isServer: true,
             maxPayload: this.options.maxPayload
           });
           try {
-            const offers = extension2.parse(secWebSocketExtensions);
-            if (offers[PerMessageDeflate2.extensionName]) {
-              perMessageDeflate.accept(offers[PerMessageDeflate2.extensionName]);
-              extensions[PerMessageDeflate2.extensionName] = perMessageDeflate;
+            const offers = extension.parse(secWebSocketExtensions);
+            if (offers[PerMessageDeflate.extensionName]) {
+              perMessageDeflate.accept(offers[PerMessageDeflate.extensionName]);
+              extensions[PerMessageDeflate.extensionName] = perMessageDeflate;
             }
           } catch (err) {
             const message = "Invalid or unacceptable Sec-WebSocket-Extensions header";
@@ -26936,10 +26936,10 @@ var require_websocket_server = __commonJS({
             ws._protocol = protocol;
           }
         }
-        if (extensions[PerMessageDeflate2.extensionName]) {
-          const params = extensions[PerMessageDeflate2.extensionName].params;
-          const value = extension2.format({
-            [PerMessageDeflate2.extensionName]: [params]
+        if (extensions[PerMessageDeflate.extensionName]) {
+          const params = extensions[PerMessageDeflate.extensionName].params;
+          const value = extension.format({
+            [PerMessageDeflate.extensionName]: [params]
           });
           headers.push(`Sec-WebSocket-Extensions: ${value}`);
           ws._extensions = extensions;
@@ -26966,7 +26966,7 @@ var require_websocket_server = __commonJS({
         cb(ws, req);
       }
     };
-    module2.exports = WebSocketServer2;
+    module2.exports = WebSocketServer;
     function addListeners(server, map) {
       for (const event of Object.keys(map)) server.on(event, map[event]);
       return function removeListeners() {
@@ -27005,6 +27005,31 @@ var require_websocket_server = __commonJS({
         abortHandshake(socket, code, message, headers);
       }
     }
+  }
+});
+
+// node_modules/ws/index.js
+var require_ws = __commonJS({
+  "node_modules/ws/index.js"(exports2, module2) {
+    "use strict";
+    var createWebSocketStream = require_stream();
+    var extension = require_extension();
+    var PerMessageDeflate = require_permessage_deflate();
+    var Receiver = require_receiver();
+    var Sender = require_sender();
+    var subprotocol = require_subprotocol();
+    var WebSocket = require_websocket();
+    var WebSocketServer = require_websocket_server();
+    WebSocket.createWebSocketStream = createWebSocketStream;
+    WebSocket.extension = extension;
+    WebSocket.PerMessageDeflate = PerMessageDeflate;
+    WebSocket.Receiver = Receiver;
+    WebSocket.Sender = Sender;
+    WebSocket.Server = WebSocketServer;
+    WebSocket.subprotocol = subprotocol;
+    WebSocket.WebSocket = WebSocket;
+    WebSocket.WebSocketServer = WebSocketServer;
+    module2.exports = WebSocket;
   }
 });
 
@@ -32066,52 +32091,59 @@ var DispenseStartRequestSchema = JobStartSchema.extend({
   target_volume_ml: external_exports.number().positive().optional()
 });
 
-// node_modules/ws/wrapper.mjs
-var import_stream = __toESM(require_stream(), 1);
-var import_extension = __toESM(require_extension(), 1);
-var import_permessage_deflate = __toESM(require_permessage_deflate(), 1);
-var import_receiver = __toESM(require_receiver(), 1);
-var import_sender = __toESM(require_sender(), 1);
-var import_subprotocol = __toESM(require_subprotocol(), 1);
-var import_websocket = __toESM(require_websocket(), 1);
-var import_websocket_server = __toESM(require_websocket_server(), 1);
-
 // backend/src/websocket.ts
+var WebSocketServerClass = null;
+var WS_OPEN_STATE = 1;
+try {
+  if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    const wsModule = require_ws();
+    WebSocketServerClass = wsModule.WebSocketServer || wsModule.Server;
+  }
+} catch {
+}
 var RealtimeHub = class {
   wss = null;
   clients = /* @__PURE__ */ new Set();
   init(server) {
-    this.wss = new import_websocket_server.default({ server, path: "/ws" });
-    this.wss.on("connection", (ws) => {
-      const sub = { ws };
-      this.clients.add(sub);
-      ws.on("message", (data) => {
-        try {
-          const msg = JSON.parse(data.toString());
-          if (msg.type === "SUBSCRIBE_ORDER") {
-            sub.orderId = msg.orderId;
-            ws.send(JSON.stringify({ type: "SUBSCRIBED", orderId: msg.orderId }));
-          } else if (msg.type === "SUBSCRIBE_MACHINE") {
-            sub.machineCode = msg.machineCode;
-            ws.send(JSON.stringify({ type: "SUBSCRIBED_MACHINE", machineCode: msg.machineCode }));
-          } else if (msg.type === "SUBSCRIBE_ADMIN") {
-            sub.isAdmin = true;
-            ws.send(JSON.stringify({ type: "SUBSCRIBED_ADMIN" }));
+    if (!WebSocketServerClass) {
+      return;
+    }
+    try {
+      this.wss = new WebSocketServerClass({ server, path: "/ws" });
+      this.wss.on("connection", (ws) => {
+        const sub = { ws };
+        this.clients.add(sub);
+        ws.on("message", (data) => {
+          try {
+            const msg = JSON.parse(data.toString());
+            if (msg.type === "SUBSCRIBE_ORDER") {
+              sub.orderId = msg.orderId;
+              ws.send(JSON.stringify({ type: "SUBSCRIBED", orderId: msg.orderId }));
+            } else if (msg.type === "SUBSCRIBE_MACHINE") {
+              sub.machineCode = msg.machineCode;
+              ws.send(JSON.stringify({ type: "SUBSCRIBED_MACHINE", machineCode: msg.machineCode }));
+            } else if (msg.type === "SUBSCRIBE_ADMIN") {
+              sub.isAdmin = true;
+              ws.send(JSON.stringify({ type: "SUBSCRIBED_ADMIN" }));
+            }
+          } catch (e) {
           }
-        } catch (e) {
-        }
+        });
+        ws.on("close", () => {
+          this.clients.delete(sub);
+        });
+        ws.send(JSON.stringify({ type: "CONNECTED", timestamp: (/* @__PURE__ */ new Date()).toISOString() }));
       });
-      ws.on("close", () => {
-        this.clients.delete(sub);
-      });
-      ws.send(JSON.stringify({ type: "CONNECTED", timestamp: (/* @__PURE__ */ new Date()).toISOString() }));
-    });
-    console.log("\u26A1 WebSocket Realtime Hub initialized on /ws");
+      console.log("\u26A1 WebSocket Realtime Hub initialized on /ws");
+    } catch (err) {
+      console.warn("WebSocket init bypassed:", err);
+    }
   }
   broadcast(message) {
+    if (!this.wss || this.clients.size === 0) return;
     const payload = JSON.stringify(message);
     for (const client of this.clients) {
-      if (client.ws.readyState === import_websocket.default.OPEN) {
+      if (client.ws?.readyState === WS_OPEN_STATE) {
         if (message.orderId && client.orderId && client.orderId !== message.orderId && !client.isAdmin) {
           continue;
         }
@@ -32145,9 +32177,10 @@ var RealtimeHub = class {
     });
   }
   sendCommandToMachine(machineId, command) {
+    if (!this.wss || this.clients.size === 0) return;
     const payload = JSON.stringify(command);
     for (const client of this.clients) {
-      if (client.ws.readyState === import_websocket.default.OPEN && (client.machineCode === machineId || client.machineCode === "AQ-VM-001")) {
+      if (client.ws?.readyState === WS_OPEN_STATE && (client.machineCode === machineId || client.machineCode === "AQ-VM-001")) {
         client.ws.send(payload);
       }
     }
