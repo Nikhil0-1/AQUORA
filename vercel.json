@@ -1,12 +1,11 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "rewrites": [
-    { "source": "/health", "destination": "https://vxcqywbycvasmjngolps.supabase.co/functions/v1/api/health" },
-    { "source": "/api/health", "destination": "https://vxcqywbycvasmjngolps.supabase.co/functions/v1/api/health" },
-    { "source": "/api/v1/:match*", "destination": "https://vxcqywbycvasmjngolps.supabase.co/functions/v1/api/v1/:match*" },
-    { "source": "/api/:match*", "destination": "https://vxcqywbycvasmjngolps.supabase.co/functions/v1/api/:match*" },
-    { "source": "/admin/(.*)", "destination": "/admin/index.html" },
-    { "source": "/admin", "destination": "/admin/index.html" },
-    { "source": "/:match*", "destination": "/index.html" }
+  "version": 2,
+  "routes": [
+    { "src": "/health", "dest": "https://vxcqywbycvasmjngolps.supabase.co/functions/v1/api/health" },
+    { "src": "/api/health", "dest": "https://vxcqywbycvasmjngolps.supabase.co/functions/v1/api/health" },
+    { "src": "/api/v1/(.*)", "dest": "https://vxcqywbycvasmjngolps.supabase.co/functions/v1/api/v1/$1" },
+    { "src": "/api/(.*)", "dest": "https://vxcqywbycvasmjngolps.supabase.co/functions/v1/api/$1" },
+    { "handle": "filesystem" },
+    { "src": "/.*", "dest": "/index.html" }
   ]
 }
