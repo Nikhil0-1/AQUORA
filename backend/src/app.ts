@@ -61,15 +61,29 @@ const healthHandler = (_req: express.Request, res: express.Response) => {
 
 app.get('/health', healthHandler);
 app.get('/api/health', healthHandler);
+app.get('/api', healthHandler);
 
-// API Routes
+// API Routes with both /api/v1 and /v1 prefixes (handles Vercel rewrite prefix variations)
 app.use('/api/v1/products', productsRouter);
+app.use('/v1/products', productsRouter);
+
 app.use('/api/v1/categories', categoriesRouter);
+app.use('/v1/categories', categoriesRouter);
+
 app.use('/api/v1/machines', machinesRouter);
+app.use('/v1/machines', machinesRouter);
+
 app.use('/api/v1/orders', ordersRouter);
+app.use('/v1/orders', ordersRouter);
+
 app.use('/api/v1/payments', paymentsRouter);
+app.use('/v1/payments', paymentsRouter);
+
 app.use('/api/v1/machine', machineRouter);
+app.use('/v1/machine', machineRouter);
+
 app.use('/api/v1/admin', adminRouter);
+app.use('/v1/admin', adminRouter);
 
 // Initialize DB eagerly
 getDatabase();

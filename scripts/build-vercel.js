@@ -32,4 +32,29 @@ if (!fs.existsSync(path.join(outDir, 'index.html')) && fs.existsSync(adminDist))
   console.log(`✓ Standalone Admin Dashboard copied to /admin (from ${path.relative(rootDir, adminDist)})`);
 }
 
+// 3. Bundle Serverless Backend API for Vercel
+try {
+  const esbuild = require('esbuild');
+  const serverlessEntry = path.join(rootDir, 'backend', 'src', 'serverless-handler.ts');
+  const apiDir = path.join(rootDir, 'api');
+  fs.mkdirSync(apiDir, { recursive: true });
+
+  esbuild.buildSync({
+    entryPoints: [serverlessEntry],
+    bundle: true,
+    platform: 'node',
+    target: 'node18',
+    format: 'cjs',
+    footer: {
+      js: 'module.exports = module.exports.default || module.exports;',
+    },
+    outfile: path.join(apiDir, 'index.js'),
+  });
+  fs.copyFileSync(path.join(apiDir, 'index.js'), path.join(apiDir, '[...all].js'));
+  fs.copyFileSync(path.join(apiDir, 'index.js'), path.join(apiDir, 'health.js'));
+  console.log('✓ Vercel Serverless Functions bundled to api/ (index.js, [...all].js, health.js)');
+} catch (bundleErr) {
+  console.warn('⚠️ Serverless bundling notice:', bundleErr.message);
+}
+
 console.log('✨ Unified Vercel production build ready at dist/');
