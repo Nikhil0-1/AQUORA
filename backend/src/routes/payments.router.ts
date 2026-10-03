@@ -32,9 +32,45 @@ paymentsRouter.post('/create', async (req: Request, res: Response) => {
     }
 
     const cleanOrderNumber = order.order_number.replace(/[^a-zA-Z0-9]/g, '');
-    const providerOrderId = `order_${cleanOrderNumber}_${Date.now()}`;
+    let providerOrderId = `order_${cleanOrderNumber}_${Date.now()}`;
     const amountPaise = Math.round(order.amount * 100);
     const razorpayKeyId = process.env.RAZORPAY_KEY_ID || 'rzp_test_1DP5mmOlF5G5ag';
+    const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET;
+
+    // Call official Razorpay Orders API if credentials exist
+    if (razorpayKeyId && razorpayKeySecret && !razorpayKeySecret.includes('mock')) {
+      try {
+        const basicAuth = Buffer.from(`${razorpayKeyId}:${razorpayKeySecret}`).toString('base64');
+        const rzpRes = await fetch('https://api.razorpay.com/v1/orders', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Basic ${basicAuth}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            amount: amountPaise,
+            currency: order.currency || 'INR',
+            receipt: order.order_number.slice(0, 40),
+            notes: {
+              aquora_order_id: order.id,
+              machine_code: order.machine_code,
+            },
+          }),
+        });
+
+        if (rzpRes.ok) {
+          const rzpJson = (await rzpRes.json()) as any;
+          if (rzpJson.id) {
+            providerOrderId = rzpJson.id;
+          }
+        } else {
+          const rzpErr = await rzpRes.json().catch(() => ({}));
+          console.warn('[RAZORPAY ORDERS API RESPONSE]', rzpErr);
+        }
+      } catch (rzpApiErr) {
+        console.warn('[RAZORPAY API CALL EXCEPTION]', rzpApiErr);
+      }
+    }
 
     const upiQrString = `upi://pay?pa=aquora@icici&pn=AQUORA+VENDING&am=${order.amount.toFixed(2)}&cu=INR&tr=${order.order_number}&tn=Aquora+Sanitizer+Dispense`;
 

@@ -1,6 +1,8 @@
 import { Product, Order } from './types';
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001';
+// In production, requests to /api/v1/... and /health are relative to current origin.
+// In local development, vite.config.ts proxies /api and /health to http://localhost:3001.
+const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || (import.meta as any).env?.VITE_API_BASE_URL || '';
 
 const FALLBACK_PRODUCTS: Product[] = [
   {
@@ -63,23 +65,9 @@ class PublicApiClient {
     this.baseUrl = API_BASE_URL.replace(/\/$/, '');
   }
 
-  private saveCachedOrder(order: Order): void {
-    try {
-      localStorage.setItem(`aquora_order_${order.id}`, JSON.stringify(order));
-    } catch {}
-  }
-
-  private getCachedOrder(orderId: string): Order | null {
-    try {
-      const raw = localStorage.getItem(`aquora_order_${orderId}`);
-      if (raw) return JSON.parse(raw);
-    } catch {}
-    return null;
-  }
-
   async checkBackendConnection(): Promise<boolean> {
     try {
-      const res = await fetch(`${this.baseUrl}/health`, { signal: AbortSignal.timeout(1500) });
+      const res = await fetch(`${this.baseUrl}/health`, { signal: AbortSignal.timeout(2000) });
       return res.ok;
     } catch {
       return false;
@@ -93,7 +81,7 @@ class PublicApiClient {
         return await res.json();
       }
     } catch (e) {
-      console.warn('Backend unavailable, using catalog cache:', e);
+      // In offline browsing only, show catalog cache
     }
     return FALLBACK_PRODUCTS;
   }
@@ -103,13 +91,20 @@ class PublicApiClient {
     return list.find((p) => p.id === id) || null;
   }
 
+  /**
+   * Section 6: SERVER ORDER CREATION
+   * Validates products, variants, quantities and stock on the live server.
+   * NEVER generates fake orders or fake client order sessions.
+   * If the backend is unavailable: Throws an error to STOP checkout.
+   */
   async createOrder(payload: {
     customer_name?: string;
     customer_phone?: string;
     items: Array<{ product_id: string; variant_id?: string; quantity: number; volume_ml: number }>;
   }): Promise<Order> {
+    let res: Response;
     try {
-      const res = await fetch(`${this.baseUrl}/api/v1/orders`, {
+      res = await fetch(`${this.baseUrl}/api/v1/orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -120,44 +115,23 @@ class PublicApiClient {
           items: payload.items,
         }),
       });
-      if (res.ok) {
-        const liveOrder = await res.json();
-        this.saveCachedOrder(liveOrder);
-        return liveOrder;
-      }
-    } catch (e) {
-      console.warn('Backend order creation offline, generating client order session:', e);
+    } catch (netErr) {
+      throw new Error('Payment service is temporarily unavailable. Please try again.');
     }
 
-    // Local deterministic order session for offline/testing mode
-    const totalAmount = payload.items.reduce((sum, item) => sum + item.quantity * 35.0, 0);
-    const mockOrder: Order = {
-      id: `ord_${Date.now()}`,
-      order_number: `AQUORA-WEB-${Math.floor(100000 + Math.random() * 900000)}`,
-      customer_name: payload.customer_name || 'Online Customer',
-      customer_phone: payload.customer_phone || '',
-      machine_code: 'AQ-DM-001',
-      amount: totalAmount,
-      currency: 'INR',
-      payment_status: 'PENDING',
-      order_status: 'CREATED',
-      source: 'PUBLIC_WEB',
-      items: payload.items.map((it) => ({
-        product_id: it.product_id,
-        product_name: 'AQUORA Sanitizer',
-        volume_ml: it.volume_ml,
-        quantity: it.quantity,
-        unit_price: 35.0,
-        total_price: it.quantity * 35.0,
-      })),
-      created_at: new Date().toISOString(),
-    };
-    this.saveCachedOrder(mockOrder);
-    return mockOrder;
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Payment service is temporarily unavailable. Please try again.' }));
+      throw new Error(err.message || 'Payment service is temporarily unavailable. Please try again.');
+    }
+
+    return await res.json();
   }
 
   /**
-   * Initiate Razorpay Payment using server-calculated amount
+   * Section 7: RAZORPAY ORDER INITIATION
+   * Real backend creates the authoritative Razorpay order.
+   * NEVER creates fake order_test_* or simulated payment sessions.
+   * If the backend is unavailable: Throws an error to STOP checkout.
    */
   async createPayment(orderId: string): Promise<{
     success: boolean;
@@ -170,36 +144,28 @@ class PublicApiClient {
     razorpay_key_id: string;
     qr_code_data?: string;
   }> {
+    let res: Response;
     try {
-      const res = await fetch(`${this.baseUrl}/api/v1/payments/create`, {
+      res = await fetch(`${this.baseUrl}/api/v1/payments/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order_id: orderId, provider: 'RAZORPAY' }),
       });
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch (e) {
-      console.warn('Backend payment session initiation offline, using resilient test payment session:', e);
+    } catch (netErr) {
+      throw new Error('Payment service is temporarily unavailable. Please try again.');
     }
 
-    // Offline / Standalone preview mode fallback
-    const cachedOrder = this.getCachedOrder(orderId);
-    const amount = cachedOrder?.amount || 35.0;
-    return {
-      success: true,
-      order_id: orderId,
-      order_number: cachedOrder?.order_number || `AQ-WEB-${Date.now().toString().slice(-6)}`,
-      amount: amount,
-      amount_paise: Math.round(amount * 100),
-      currency: 'INR',
-      provider_order_id: `order_test_${Date.now()}`,
-      razorpay_key_id: (import.meta as any).env?.VITE_RAZORPAY_KEY_ID || 'rzp_test_1DP5mmOlF5G5ag',
-    };
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Payment service is temporarily unavailable. Please try again.' }));
+      throw new Error(err.message || 'Payment service is temporarily unavailable. Please try again.');
+    }
+
+    return await res.json();
   }
 
   /**
-   * Cryptographically verify Razorpay payment on server before any dispensing
+   * Section 10: Authoritative Cryptographic Payment Verification on Live Backend
+   * Verifies Razorpay payment signature before any dispensing can be authorized.
    */
   async verifyPayment(payload: {
     order_id: string;
@@ -207,56 +173,36 @@ class PublicApiClient {
     razorpay_payment_id: string;
     razorpay_signature: string;
   }): Promise<{ success: boolean; order_id: string; payment_status: string; order_status: string; job_id?: string }> {
+    let res: Response;
     try {
-      const res = await fetch(`${this.baseUrl}/api/v1/payments/verify`, {
+      res = await fetch(`${this.baseUrl}/api/v1/payments/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      if (res.ok) {
-        const data = await res.json();
-        const local = this.getCachedOrder(payload.order_id);
-        if (local) {
-          local.payment_status = data.payment_status || 'PAID';
-          local.order_status = data.order_status || 'QUEUED';
-          this.saveCachedOrder(local);
-        }
-        return data;
-      }
-    } catch (e) {
-      console.warn('Backend payment verification offline, registering verified local test session:', e);
+    } catch (netErr) {
+      throw new Error('Payment verification failed on server: network unreachable.');
     }
 
-    // Offline test mode fallback: Update cached order to PAID, order_status to QUEUED
-    const cached = this.getCachedOrder(payload.order_id);
-    if (cached) {
-      cached.payment_status = 'PAID';
-      cached.order_status = 'QUEUED';
-      this.saveCachedOrder(cached);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Payment verification failed on server.' }));
+      throw new Error(err.message || 'Payment verification failed on server.');
     }
-    return {
-      success: true,
-      order_id: payload.order_id,
-      payment_status: 'PAID',
-      order_status: 'QUEUED',
-      job_id: `job_offline_${Date.now()}`,
-    };
+
+    return await res.json();
   }
 
   async getOrder(orderId: string): Promise<Order | null> {
     try {
       const res = await fetch(`${this.baseUrl}/api/v1/orders/${orderId}`);
       if (res.ok) {
-        const liveOrder = await res.json();
-        this.saveCachedOrder(liveOrder);
-        return liveOrder;
+        return await res.json();
       }
     } catch (e) {
-      // Backend offline, fallback to cached order session
+      // Order lookup error
     }
-    return this.getCachedOrder(orderId);
+    return null;
   }
 }
 
 export const publicApi = new PublicApiClient();
-

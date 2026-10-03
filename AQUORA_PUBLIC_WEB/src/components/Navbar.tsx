@@ -55,15 +55,11 @@ export function Navbar({ cartCount, onOpenCart }: Props) {
         <div className="flex items-center gap-4">
           <div 
             className="hidden sm:flex items-center gap-2 bg-[#0A111E] border border-[#1E2C44] px-3.5 py-1.5 rounded-full text-xs text-slate-400"
-            title={isBackendOnline ? 'Connected to live backend service on port 3001' : 'Running in standalone client preview mode. Run "npm run dev:backend" to connect live API.'}
+            title={isBackendOnline ? 'AQUORA Production Cloud Network Active' : 'Connecting to AQUORA Network...'}
           >
             <span className={`w-2 h-2 rounded-full ${isBackendOnline ? 'bg-emerald-400 animate-pulse' : 'bg-cyan-400'}`} />
             <span className="font-mono text-slate-200">
-              {isBackendOnline === null 
-                ? 'Connecting...' 
-                : isBackendOnline 
-                ? 'Backend Live (3001)' 
-                : 'Standalone Demo Mode'}
+              {isBackendOnline ? 'Station AQ-DM-001 Online' : 'AQUORA Network'}
             </span>
           </div>
 
