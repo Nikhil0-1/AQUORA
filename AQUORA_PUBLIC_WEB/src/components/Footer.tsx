@@ -65,9 +65,19 @@ export function Footer() {
           <div>
             © {new Date().getFullYear()} AQUORA Technologies. All rights reserved.
           </div>
-          <div className="flex items-center gap-1 text-[11px]">
-            <span>Crafted for safety & convenience</span>
-            <Heart className="w-3 h-3 text-rose-500 inline fill-rose-500 ml-1" />
+          <div className="flex items-center gap-4 text-[11px]">
+            <span className="flex items-center gap-1">
+              <span>Crafted for safety & convenience</span>
+              <Heart className="w-3 h-3 text-rose-500 inline fill-rose-500 ml-0.5" />
+            </span>
+            <a
+              href="/admin"
+              className="text-slate-600 hover:text-cyan-400 transition-colors flex items-center gap-1"
+              title="AQUORA Admin Operations (/admin)"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Admin Operations</span>
+            </a>
           </div>
         </div>
       </div>

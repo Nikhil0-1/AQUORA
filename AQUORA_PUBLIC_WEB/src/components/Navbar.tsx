@@ -53,6 +53,14 @@ export function Navbar({ cartCount, onOpenCart }: Props) {
               </span>
             )}
           </button>
+
+          <Link
+            to="/admin"
+            className="p-2.5 rounded-xl bg-[#0F1A2D] hover:bg-[#1E2C44] border border-[#1E2C44] text-slate-400 hover:text-cyan-400 transition-all hover:scale-105"
+            title="Admin Portal (/admin)"
+          >
+            <ShieldCheck className="w-5 h-5 text-slate-400 hover:text-cyan-400" />
+          </Link>
         </div>
       </div>
     </header>

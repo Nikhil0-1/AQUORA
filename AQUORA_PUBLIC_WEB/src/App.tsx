@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { Product, ProductVariant, CartItem } from './types';
 import { publicApi } from './api';
 import { Navbar } from './components/Navbar';
@@ -9,6 +9,73 @@ import { HomePage } from './pages/HomePage';
 import { ProductsPage } from './pages/ProductsPage';
 import { CheckoutPage } from './pages/CheckoutPage';
 import { OrderTrackingPage } from './pages/OrderTrackingPage';
+import { AdminDashboard } from './admin/AdminDashboard';
+
+interface MainLayoutProps {
+  products: Product[];
+  cart: CartItem[];
+  isCartOpen: boolean;
+  setIsCartOpen: (open: boolean) => void;
+  handleAddToCart: (product: Product, variant: ProductVariant | undefined, volumeMl: number) => void;
+  handleUpdateQuantity: (idx: number, newQty: number) => void;
+  handleRemoveItem: (idx: number) => void;
+  setCart: React.Dispatch<React.SetStateAction<CartItem[]>>;
+}
+
+function MainLayout({
+  products,
+  cart,
+  isCartOpen,
+  setIsCartOpen,
+  handleAddToCart,
+  handleUpdateQuantity,
+  handleRemoveItem,
+  setCart,
+}: MainLayoutProps) {
+  const location = useLocation();
+  const isAdminRoute = location.pathname.startsWith('/admin');
+
+  // If user accesses /admin or /admin/*, render the Firebase-guarded Admin Dashboard
+  if (isAdminRoute) {
+    return <AdminDashboard />;
+  }
+
+  const cartTotalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+  return (
+    <div className="min-h-screen bg-[#050B14] text-slate-100 flex flex-col justify-between selection:bg-cyan-500/30 selection:text-cyan-200">
+      <div>
+        <Navbar
+          cartCount={cartTotalItems}
+          onOpenCart={() => setIsCartOpen(true)}
+        />
+
+        <CartDrawer
+          isOpen={isCartOpen}
+          onClose={() => setIsCartOpen(false)}
+          items={cart}
+          onUpdateQuantity={handleUpdateQuantity}
+          onRemoveItem={handleRemoveItem}
+        />
+
+        <main>
+          <Routes>
+            <Route path="/" element={<HomePage products={products} onAddToCart={handleAddToCart} />} />
+            <Route path="/products" element={<ProductsPage products={products} onAddToCart={handleAddToCart} />} />
+            <Route path="/cart" element={<CheckoutPage cart={cart} onClearCart={() => setCart([])} />} />
+            <Route path="/checkout" element={<CheckoutPage cart={cart} onClearCart={() => setCart([])} />} />
+            <Route path="/order/:id" element={<OrderTrackingPage />} />
+            <Route path="/dispensing" element={<OrderTrackingPage />} />
+            <Route path="/payment-status" element={<OrderTrackingPage />} />
+            <Route path="*" element={<HomePage products={products} onAddToCart={handleAddToCart} />} />
+          </Routes>
+        </main>
+      </div>
+
+      <Footer />
+    </div>
+  );
+}
 
 export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -51,40 +118,18 @@ export default function App() {
     setCart((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const cartTotalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-[#050B14] text-slate-100 flex flex-col justify-between selection:bg-cyan-500/30 selection:text-cyan-200">
-        <div>
-          <Navbar
-            cartCount={cartTotalItems}
-            onOpenCart={() => setIsCartOpen(true)}
-          />
-
-          <CartDrawer
-            isOpen={isCartOpen}
-            onClose={() => setIsCartOpen(false)}
-            items={cart}
-            onUpdateQuantity={handleUpdateQuantity}
-            onRemoveItem={handleRemoveItem}
-          />
-
-          <main>
-            <Routes>
-              <Route path="/" element={<HomePage products={products} onAddToCart={handleAddToCart} />} />
-              <Route path="/products" element={<ProductsPage products={products} onAddToCart={handleAddToCart} />} />
-              <Route path="/cart" element={<CheckoutPage cart={cart} onClearCart={() => setCart([])} />} />
-              <Route path="/checkout" element={<CheckoutPage cart={cart} onClearCart={() => setCart([])} />} />
-              <Route path="/order/:id" element={<OrderTrackingPage />} />
-              <Route path="/dispensing" element={<OrderTrackingPage />} />
-              <Route path="/payment-status" element={<OrderTrackingPage />} />
-            </Routes>
-          </main>
-        </div>
-
-        <Footer />
-      </div>
+      <MainLayout
+        products={products}
+        cart={cart}
+        isCartOpen={isCartOpen}
+        setIsCartOpen={setIsCartOpen}
+        handleAddToCart={handleAddToCart}
+        handleUpdateQuantity={handleUpdateQuantity}
+        handleRemoveItem={handleRemoveItem}
+        setCart={setCart}
+      />
     </BrowserRouter>
   );
 }
