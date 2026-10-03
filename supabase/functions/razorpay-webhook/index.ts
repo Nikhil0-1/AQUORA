@@ -4,7 +4,15 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 // Environment variables
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const RAZORPAY_WEBHOOK_SECRET = Deno.env.get("RAZORPAY_WEBHOOK_SECRET") ?? "";
+
+function cleanCredential(val: string | undefined | null): string {
+  if (!val) return "";
+  let s = val.trim();
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1).trim();
+  }
+  return s;
+}
 
 /**
  * Verify Razorpay Webhook HMAC-SHA256 signature using standard Web Crypto API.
@@ -75,9 +83,9 @@ serve(async (req: Request) => {
   }
 
   // 2. Verify server-side secret configuration
-  const webhookSecret =
-    Deno.env.get("RAZORPAY_WEBHOOK_SECRET")?.trim() ||
-    RAZORPAY_WEBHOOK_SECRET;
+  const webhookSecret = cleanCredential(
+    Deno.env.get("RAZORPAY_WEBHOOK_SECRET") || Deno.env.get("RZP_WEBHOOK_SECRET")
+  );
 
   if (!webhookSecret) {
     console.error("[CRITICAL] RAZORPAY_WEBHOOK_SECRET environment variable is missing on server");

@@ -13,8 +13,11 @@ export default async function handler(req) {
   const edgeApiBase = 'https://vxcqywbycvasmjngolps.supabase.co/functions/v1/api';
   const url = new URL(req.url);
   let subPath = url.pathname;
-  if (subPath.startsWith('/api')) {
+  while (subPath.startsWith('/api/')) {
     subPath = subPath.slice(4);
+  }
+  if (subPath === '/api') {
+    subPath = '/';
   }
   if (!subPath.startsWith('/')) {
     subPath = '/' + subPath;

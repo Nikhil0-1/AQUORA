@@ -11,11 +11,20 @@ export class AquoraApiClient {
   private baseUrl: string;
 
   constructor(baseUrl: string = API_BASE_URL) {
-    this.baseUrl = baseUrl.replace(/\/$/, '');
+    this.baseUrl = baseUrl.replace(/\/+$/, '');
+  }
+
+  private buildUrl(path: string): string {
+    const cleanBase = this.baseUrl.replace(/\/+$/, '');
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    if (cleanBase.endsWith('/api') && cleanPath.startsWith('/api/')) {
+      return `${cleanBase}${cleanPath.slice(4)}`;
+    }
+    return `${cleanBase}${cleanPath}`;
   }
 
   private async request<T>(path: string, options?: RequestInit): Promise<T> {
-    const url = `${this.baseUrl}${path}`;
+    const url = this.buildUrl(path);
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options?.headers as Record<string, string> || {}),

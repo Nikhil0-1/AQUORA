@@ -62,12 +62,26 @@ class PublicApiClient {
   private baseUrl: string;
 
   constructor() {
-    this.baseUrl = API_BASE_URL.replace(/\/$/, '');
+    this.baseUrl = API_BASE_URL.replace(/\/+$/, '');
+  }
+
+  /**
+   * Constructs the full request URL without duplicate /api prefixes.
+   * If baseUrl already ends with /api (e.g. Supabase Edge function .../functions/v1/api)
+   * and path starts with /api/, strips the redundant /api to produce .../functions/v1/api/v1/...
+   */
+  private buildUrl(path: string): string {
+    const cleanBase = this.baseUrl.replace(/\/+$/, '');
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    if (cleanBase.endsWith('/api') && cleanPath.startsWith('/api/')) {
+      return `${cleanBase}${cleanPath.slice(4)}`;
+    }
+    return `${cleanBase}${cleanPath}`;
   }
 
   async checkBackendConnection(): Promise<boolean> {
     try {
-      const res = await fetch(`${this.baseUrl}/health`, { signal: AbortSignal.timeout(2000) });
+      const res = await fetch(this.buildUrl('/health'), { signal: AbortSignal.timeout(3000) });
       return res.ok;
     } catch {
       return false;
@@ -76,7 +90,7 @@ class PublicApiClient {
 
   async getProducts(): Promise<Product[]> {
     try {
-      const res = await fetch(`${this.baseUrl}/api/v1/products`);
+      const res = await fetch(this.buildUrl('/api/v1/products'));
       if (res.ok) {
         return await res.json();
       }
@@ -104,7 +118,7 @@ class PublicApiClient {
   }): Promise<Order> {
     let res: Response;
     try {
-      res = await fetch(`${this.baseUrl}/api/v1/orders`, {
+      res = await fetch(this.buildUrl('/api/v1/orders'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -146,7 +160,7 @@ class PublicApiClient {
   }> {
     let res: Response;
     try {
-      res = await fetch(`${this.baseUrl}/api/v1/payments/create`, {
+      res = await fetch(this.buildUrl('/api/v1/payments/create'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order_id: orderId, provider: 'RAZORPAY' }),
@@ -175,7 +189,7 @@ class PublicApiClient {
   }): Promise<{ success: boolean; order_id: string; payment_status: string; order_status: string; job_id?: string }> {
     let res: Response;
     try {
-      res = await fetch(`${this.baseUrl}/api/v1/payments/verify`, {
+      res = await fetch(this.buildUrl('/api/v1/payments/verify'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -194,12 +208,34 @@ class PublicApiClient {
 
   async getOrder(orderId: string): Promise<Order | null> {
     try {
-      const res = await fetch(`${this.baseUrl}/api/v1/orders/${orderId}`);
+      const res = await fetch(this.buildUrl(`/api/v1/orders/${orderId}`));
       if (res.ok) {
         return await res.json();
       }
     } catch (e) {
       // Order lookup error
+    }
+    return null;
+  }
+
+  async getOrderStatus(orderId: string): Promise<{
+    order_id: string;
+    order_number: string;
+    payment_status: string;
+    order_status: string;
+    amount: number;
+    currency: string;
+    dispensed_at?: string | null;
+    expires_at: string;
+    is_expired: boolean;
+  } | null> {
+    try {
+      const res = await fetch(this.buildUrl(`/api/v1/orders/${orderId}/status`));
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      // Order status lookup error
     }
     return null;
   }

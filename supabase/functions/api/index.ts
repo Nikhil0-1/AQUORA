@@ -4,8 +4,48 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 // Environment variables provided automatically by Supabase Edge Runtime
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const RAZORPAY_KEY_ID = Deno.env.get("RAZORPAY_KEY_ID") || "rzp_test_1DP5mmOlF5G5ag";
-const RAZORPAY_KEY_SECRET = Deno.env.get("RAZORPAY_KEY_SECRET") || "";
+
+function cleanCredential(val: string | undefined | null): string {
+  if (!val) return "";
+  let s = val.trim();
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1).trim();
+  }
+  return s;
+}
+
+function toBasicAuth(user: string, pass: string): string {
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(`${user}:${pass}`);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return "Basic " + btoa(binary);
+}
+
+function getRazorpayCredentials() {
+  const rawKeyId = Deno.env.get("RAZORPAY_KEY_ID") || Deno.env.get("RZP_KEY_ID") || Deno.env.get("RAZORPAY_KEY");
+  const rawKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET") || Deno.env.get("RZP_KEY_SECRET") || Deno.env.get("RAZORPAY_SECRET");
+  const rawWebhookSecret = Deno.env.get("RAZORPAY_WEBHOOK_SECRET") || Deno.env.get("RZP_WEBHOOK_SECRET");
+
+  const keyId = cleanCredential(rawKeyId);
+  const keySecret = cleanCredential(rawKeySecret);
+  const webhookSecret = cleanCredential(rawWebhookSecret);
+
+  return {
+    rawKeyId,
+    rawKeySecret,
+    rawWebhookSecret,
+    keyId,
+    keySecret,
+    webhookSecret,
+    isKeyIdConfigured: Boolean(keyId),
+    isKeySecretConfigured: Boolean(keySecret),
+    isWebhookSecretConfigured: Boolean(webhookSecret),
+    isConfigured: Boolean(keyId && keySecret),
+  };
+}
 
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -116,9 +156,14 @@ serve(async (req: Request) => {
   // Normalize path removing function prefix if present (e.g., /functions/v1/api/...)
   let path = url.pathname;
   if (path.startsWith("/functions/v1/api")) {
-    path = path.replace("/functions/v1/api", "");
-  } else if (path.startsWith("/api")) {
-    path = path.replace("/api", "");
+    path = path.slice("/functions/v1/api".length);
+  }
+  // Strip duplicate /api prefixes if present (e.g., from /api/v1/orders or /api/api/v1/orders)
+  while (path.startsWith("/api/")) {
+    path = path.slice(4);
+  }
+  if (path === "/api") {
+    path = "/";
   }
   if (!path.startsWith("/")) {
     path = "/" + path;
@@ -130,7 +175,8 @@ serve(async (req: Request) => {
     // -------------------------------------------------------------
     // 1. HEALTH ENDPOINT (/health, /api/health)
     // -------------------------------------------------------------
-    if (path === "/health" || path === "") {
+    if (path === "/health" || path === "" || path === "/" || path === "/api/health") {
+      const creds = getRazorpayCredentials();
       const { count, error } = await supabase.from("products").select("*", { count: "exact", head: true });
       return jsonResponse({
         status: "ok",
@@ -139,14 +185,97 @@ serve(async (req: Request) => {
         timestamp: new Date().toISOString(),
         database: error ? "degraded" : "connected",
         products_count: count ?? 0,
-        razorpay_configured: Boolean(RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET),
+        razorpay_configured: creds.isConfigured,
+      });
+    }
+
+    // -------------------------------------------------------------
+    // 1b. DIAGNOSTIC ENDPOINT (/v1/payments/diagnose, /payments/diagnose, /api/v1/payments/diagnose)
+    // -------------------------------------------------------------
+    if (
+      (path === "/v1/payments/diagnose" ||
+        path === "/payments/diagnose" ||
+        path === "/api/v1/payments/diagnose") &&
+      req.method === "GET"
+    ) {
+      const creds = getRazorpayCredentials();
+
+      const keyIdPrefix = creds.keyId.startsWith("rzp_test_")
+        ? "rzp_test"
+        : creds.keyId.startsWith("rzp_live_")
+        ? "rzp_live"
+        : creds.keyId
+        ? "custom"
+        : "missing";
+
+      const diagInfo = {
+        key_id_status: creds.isKeyIdConfigured ? "PRESENT" : "MISSING",
+        key_secret_status: creds.isKeySecretConfigured ? "PRESENT" : "MISSING",
+        webhook_secret_status: creds.isWebhookSecretConfigured ? "PRESENT" : "MISSING",
+        key_id_mode: keyIdPrefix,
+        key_id_length: creds.keyId.length,
+        key_id_had_quotes: creds.rawKeyId ? /^["'].*["']$/.test(creds.rawKeyId.trim()) : false,
+        key_id_had_whitespace: creds.rawKeyId ? /\s/.test(creds.rawKeyId) : false,
+        key_id_is_example_key: creds.keyId === "rzp_test_1DP5mmOlF5G5ag",
+        key_secret_length: creds.keySecret.length,
+        key_secret_length_category: creds.keySecret.length === 24 ? "STANDARD_24_CHARS" : `NON_STANDARD_${creds.keySecret.length}_CHARS`,
+        key_secret_has_placeholder: /[x*.]/i.test(creds.keySecret),
+        key_secret_had_quotes: creds.rawKeySecret ? /^["'].*["']$/.test(creds.rawKeySecret.trim()) : false,
+        key_secret_had_whitespace: creds.rawKeySecret ? /\s/.test(creds.rawKeySecret) : false,
+        webhook_secret_length: creds.webhookSecret.length,
+        matching_env_keys: Object.keys(Deno.env.toObject()).filter((k) =>
+          /razor|rzp|secret|pay/i.test(k)
+        ),
+      };
+
+      let testAuthResult: any = { attempted: false };
+      if (creds.isConfigured) {
+        try {
+          const authHeader = toBasicAuth(creds.keyId, creds.keySecret);
+          const testRes = await fetch("https://api.razorpay.com/v1/orders", {
+            method: "POST",
+            headers: {
+              Authorization: authHeader,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              amount: 2000,
+              currency: "INR",
+              receipt: "diag_auth_check",
+              notes: { check: "diagnostic_auth_verification" },
+            }),
+          });
+
+          const testData = await testRes.json().catch(() => ({}));
+          testAuthResult = {
+            attempted: true,
+            http_status: testRes.status,
+            auth_ok: testRes.status === 200 || testRes.status === 201,
+            razorpay_error_code: testData?.error?.code || null,
+            razorpay_error_description: testData?.error?.description || null,
+            created_order_id: (testRes.status === 200 || testRes.status === 201) ? testData?.id : null,
+          };
+        } catch (diagErr: any) {
+          testAuthResult = {
+            attempted: true,
+            http_status: 500,
+            auth_ok: false,
+            error: diagErr.message,
+          };
+        }
+      }
+
+      return jsonResponse({
+        diagnostic: "AQUORA Razorpay Authentication Diagnostic",
+        credentials: diagInfo,
+        test_auth: testAuthResult,
       });
     }
 
     // -------------------------------------------------------------
     // 2. PRODUCTS ENDPOINT (GET /v1/products, GET /v1/products/:id)
     // -------------------------------------------------------------
-    if (path === "/v1/products" || path === "/products") {
+    if (path === "/v1/products" || path === "/products" || path === "/api/v1/products") {
       if (req.method === "GET") {
         const { data: products, error: pErr } = await supabase
           .from("products")
@@ -204,8 +333,8 @@ serve(async (req: Request) => {
       }
     }
 
-    // Specific product: /v1/products/:id
-    const productMatch = path.match(/^\/(?:v1\/)?products\/([a-zA-Z0-9_-]+)$/);
+    // Specific product: /v1/products/:id or /api/v1/products/:id or /products/:id
+    const productMatch = path.match(/^\/(?:(?:api\/)?v1\/)?products\/([a-zA-Z0-9_-]+)$/);
     if (productMatch && req.method === "GET") {
       const productId = productMatch[1];
       const { data: p, error: pErr } = await supabase
@@ -254,7 +383,7 @@ serve(async (req: Request) => {
     }
 
     // Categories
-    if (path === "/v1/categories" || path === "/categories") {
+    if (path === "/v1/categories" || path === "/categories" || path === "/api/v1/categories") {
       const { data: cats, error } = await supabase.from("categories").select("*");
       if (error) return errorResponse("Failed to fetch categories", 500, error.message);
       return jsonResponse(cats || []);
@@ -263,7 +392,7 @@ serve(async (req: Request) => {
     // -------------------------------------------------------------
     // 3. ORDERS ENDPOINT (POST /v1/orders, GET /v1/orders/:id)
     // -------------------------------------------------------------
-    if ((path === "/v1/orders" || path === "/orders") && req.method === "POST") {
+    if ((path === "/v1/orders" || path === "/orders" || path === "/api/v1/orders") && req.method === "POST") {
       const body = await req.json().catch(() => ({}));
       const items = Array.isArray(body.items) ? body.items : [];
 
@@ -398,8 +527,44 @@ serve(async (req: Request) => {
       );
     }
 
-    // Lookup order: /v1/orders/:id
-    const orderMatch = path.match(/^\/(?:v1\/)?orders\/([a-zA-Z0-9_-]+)$/);
+    // -------------------------------------------------------------
+    // Explicit order status endpoint: /v1/orders/:id/status
+    // -------------------------------------------------------------
+    const orderStatusMatch = path.match(/^\/(?:(?:api\/)?v1\/)?orders\/([a-zA-Z0-9_-]+)\/status$/);
+    if (orderStatusMatch && req.method === "GET") {
+      const orderIdOrNum = orderStatusMatch[1];
+      let query = supabase.from("orders").select("*, order_items(*), payments(*), dispense_jobs(*)");
+
+      if (orderIdOrNum.includes("-") && orderIdOrNum.length > 25) {
+        query = query.eq("id", orderIdOrNum);
+      } else {
+        query = query.eq("order_number", orderIdOrNum);
+      }
+
+      const { data: order, error } = await query.maybeSingle();
+      if (error || !order) {
+        return errorResponse("Order not found", 404);
+      }
+
+      const isExpired = new Date() > new Date(order.expires_at);
+      return jsonResponse({
+        order_id: order.id,
+        order_number: order.order_number,
+        payment_status: order.payment_status,
+        order_status: order.order_status,
+        amount: Number(order.amount),
+        currency: order.currency || "INR",
+        dispensed_at: order.dispensed_at,
+        expires_at: order.expires_at,
+        is_expired: isExpired,
+        items: order.order_items || [],
+        payments: order.payments || [],
+        dispense_jobs: order.dispense_jobs || [],
+      });
+    }
+
+    // Lookup order: /v1/orders/:id or /api/v1/orders/:id or /orders/:id
+    const orderMatch = path.match(/^\/(?:(?:api\/)?v1\/)?orders\/([a-zA-Z0-9_-]+)$/);
     if (orderMatch && req.method === "GET") {
       const orderIdOrNum = orderMatch[1];
       let query = supabase.from("orders").select("*, order_items(*), payments(*), dispense_jobs(*)");
@@ -419,9 +584,9 @@ serve(async (req: Request) => {
     }
 
     // -------------------------------------------------------------
-    // 4. PAYMENTS CREATE (POST /v1/payments/create)
+    // 4. PAYMENTS CREATE (POST /v1/payments/create, POST /api/v1/payments/create)
     // -------------------------------------------------------------
-    if ((path === "/v1/payments/create" || path === "/payments/create") && req.method === "POST") {
+    if ((path === "/v1/payments/create" || path === "/payments/create" || path === "/api/v1/payments/create") && req.method === "POST") {
       const body = await req.json().catch(() => ({}));
       const orderId = body.order_id;
 
@@ -443,19 +608,30 @@ serve(async (req: Request) => {
         return errorResponse("Order is already paid", 400);
       }
 
+      const creds = getRazorpayCredentials();
       const amountPaise = Math.round(Number(order.amount) * 100);
 
-      // Verify Razorpay Secret is available on backend
-      if (!RAZORPAY_KEY_SECRET) {
-        console.error("[PAYMENTS] RAZORPAY_KEY_SECRET is not configured in environment");
-        return errorResponse(
-          "Payment gateway credentials not configured. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in Supabase Secrets.",
-          503
+      // Verify Razorpay credentials are available on backend
+      if (!creds.isConfigured) {
+        console.error("[PAYMENTS] Razorpay credentials missing in Supabase Edge Function Secrets");
+        return new Response(
+          JSON.stringify({
+            success: false,
+            code: "RAZORPAY_CREDENTIALS_MISSING",
+            message: "Payment gateway credentials not configured. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in Supabase Secrets.",
+          }),
+          {
+            status: 503,
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "application/json",
+            },
+          }
         );
       }
 
       // Call authentic Razorpay Orders API
-      const authHeader = "Basic " + btoa(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`);
+      const authHeader = toBasicAuth(creds.keyId, creds.keySecret);
       const rzpRes = await fetch("https://api.razorpay.com/v1/orders", {
         method: "POST",
         headers: {
@@ -477,11 +653,25 @@ serve(async (req: Request) => {
       const rzpData = await rzpRes.json().catch(() => ({}));
 
       if (!rzpRes.ok) {
-        console.error("[PAYMENTS] Razorpay Orders API error:", rzpData);
-        return errorResponse(
-          rzpData.error?.description || "Payment service is temporarily unavailable. Please try again.",
-          502,
-          rzpData
+        console.error(`[PAYMENTS] Razorpay Orders API error HTTP ${rzpRes.status}:`, rzpData);
+        const isAuthError = rzpRes.status === 401;
+        return new Response(
+          JSON.stringify({
+            success: false,
+            code: isAuthError ? "RAZORPAY_AUTHENTICATION_FAILED" : "PAYMENT_GATEWAY_ERROR",
+            message: isAuthError
+              ? "Razorpay authentication failed"
+              : (rzpData?.error?.description || "Payment service error"),
+            http_status: rzpRes.status,
+            upstream_error: rzpData?.error?.description || undefined,
+          }),
+          {
+            status: isAuthError ? 502 : rzpRes.status,
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "application/json",
+            },
+          }
         );
       }
 
@@ -519,6 +709,8 @@ serve(async (req: Request) => {
         });
       }
 
+      const upiQrString = `upi://pay?pa=aquora@icici&pn=AQUORA+VENDING&am=${Number(order.amount).toFixed(2)}&cu=INR&tr=${order.order_number}&tn=Aquora+Sanitizer+Dispense`;
+
       return jsonResponse({
         success: true,
         order_id: order.id,
@@ -527,14 +719,15 @@ serve(async (req: Request) => {
         amount_paise: amountPaise,
         currency: "INR",
         provider_order_id: providerOrderId,
-        razorpay_key_id: RAZORPAY_KEY_ID,
+        razorpay_key_id: creds.keyId,
+        qr_code_data: upiQrString,
       });
     }
 
     // -------------------------------------------------------------
-    // 5. PAYMENTS VERIFY (POST /v1/payments/verify)
+    // 5. PAYMENTS VERIFY (POST /v1/payments/verify, POST /api/v1/payments/verify)
     // -------------------------------------------------------------
-    if ((path === "/v1/payments/verify" || path === "/payments/verify") && req.method === "POST") {
+    if ((path === "/v1/payments/verify" || path === "/payments/verify" || path === "/api/v1/payments/verify") && req.method === "POST") {
       const body = await req.json().catch(() => ({}));
       const { order_id, razorpay_order_id, razorpay_payment_id, razorpay_signature } = body;
 
@@ -542,7 +735,8 @@ serve(async (req: Request) => {
         return errorResponse("Missing required payment verification parameters", 400);
       }
 
-      if (!RAZORPAY_KEY_SECRET) {
+      const creds = getRazorpayCredentials();
+      if (!creds.isKeySecretConfigured) {
         return errorResponse("Payment verification unavailable: RAZORPAY_KEY_SECRET missing", 503);
       }
 
@@ -550,7 +744,7 @@ serve(async (req: Request) => {
         razorpay_order_id,
         razorpay_payment_id,
         razorpay_signature,
-        RAZORPAY_KEY_SECRET
+        creds.keySecret
       );
 
       if (!isValid) {
@@ -655,7 +849,7 @@ serve(async (req: Request) => {
     // -------------------------------------------------------------
     // 6. ADMIN STATS & ADMIN ROUTES
     // -------------------------------------------------------------
-    if (path === "/v1/admin/stats" || path === "/admin/stats") {
+    if (path === "/v1/admin/stats" || path === "/admin/stats" || path === "/api/v1/admin/stats") {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const todayIso = today.toISOString();
@@ -687,7 +881,7 @@ serve(async (req: Request) => {
       });
     }
 
-    if (path === "/v1/admin/orders" || path === "/admin/orders") {
+    if (path === "/v1/admin/orders" || path === "/admin/orders" || path === "/api/v1/admin/orders") {
       const { data: orders, error } = await supabase
         .from("orders")
         .select("*, order_items(*), payments(*), dispense_jobs(*)")
@@ -698,7 +892,7 @@ serve(async (req: Request) => {
       return jsonResponse(orders || []);
     }
 
-    if (path === "/v1/admin/machines" || path === "/admin/machines") {
+    if (path === "/v1/admin/machines" || path === "/admin/machines" || path === "/api/v1/admin/machines") {
       const { data: machines, error } = await supabase.from("dispensing_machines").select("*");
       if (error) return errorResponse("Failed to fetch machines", 500, error.message);
       return jsonResponse(machines || []);
