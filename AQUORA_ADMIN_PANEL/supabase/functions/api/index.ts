@@ -239,7 +239,7 @@ serve(async (req: Request) => {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              amount: 2000,
+              amount: 100,
               currency: "INR",
               receipt: "diag_auth_check",
               notes: { check: "diagnostic_auth_verification" },
@@ -632,41 +632,85 @@ serve(async (req: Request) => {
 
       // Call authentic Razorpay Orders API
       const authHeader = toBasicAuth(creds.keyId, creds.keySecret);
-      const rzpRes = await fetch("https://api.razorpay.com/v1/orders", {
-        method: "POST",
-        headers: {
-          Authorization: authHeader,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          amount: amountPaise,
-          currency: "INR",
-          receipt: order.order_number,
-          notes: {
-            order_id: order.id,
-            order_number: order.order_number,
-            source: order.source || "PUBLIC_WEB",
+      let rzpRes: Response;
+      try {
+        rzpRes = await fetch("https://api.razorpay.com/v1/orders", {
+          method: "POST",
+          headers: {
+            Authorization: authHeader,
+            "Content-Type": "application/json",
           },
-        }),
-      });
+          body: JSON.stringify({
+            amount: amountPaise,
+            currency: "INR",
+            receipt: order.order_number,
+            notes: {
+              order_id: order.id,
+              order_number: order.order_number,
+              source: order.source || "PUBLIC_WEB",
+            },
+          }),
+        });
+      } catch (fetchErr: any) {
+        console.error("[PAYMENTS] Network error reaching Razorpay:", fetchErr);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            code: "RAZORPAY_NETWORK_ERROR",
+            message: "Failed to connect to Razorpay payment gateway",
+            details: fetchErr?.message,
+          }),
+          {
+            status: 502,
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+      }
 
       const rzpData = await rzpRes.json().catch(() => ({}));
 
       if (!rzpRes.ok) {
         console.error(`[PAYMENTS] Razorpay Orders API error HTTP ${rzpRes.status}:`, rzpData);
-        const isAuthError = rzpRes.status === 401;
+        let errorCode = "PAYMENT_GATEWAY_ERROR";
+        let clientStatus = rzpRes.status;
+        let errorMessage = rzpData?.error?.description || "Payment service error";
+
+        if (rzpRes.status === 401) {
+          errorCode = "RAZORPAY_AUTHENTICATION_FAILED";
+          errorMessage = "Razorpay authentication failed";
+          clientStatus = 502; // Upstream auth failure
+        } else if (rzpRes.status === 400) {
+          errorCode = "RAZORPAY_INVALID_REQUEST";
+          errorMessage = rzpData?.error?.description || "Invalid order request";
+          clientStatus = 400;
+        } else if (rzpRes.status === 403) {
+          errorCode = "RAZORPAY_FORBIDDEN";
+          errorMessage = rzpData?.error?.description || "Permission denied by payment gateway";
+          clientStatus = 403;
+        } else if (rzpRes.status === 429) {
+          errorCode = "RAZORPAY_RATE_LIMIT";
+          errorMessage = "Razorpay rate limit exceeded";
+          clientStatus = 429;
+        } else if (rzpRes.status >= 500) {
+          errorCode = "RAZORPAY_UPSTREAM_ERROR";
+          errorMessage = `Razorpay service unavailable (${rzpRes.status})`;
+          clientStatus = 502;
+        }
+
         return new Response(
           JSON.stringify({
             success: false,
-            code: isAuthError ? "RAZORPAY_AUTHENTICATION_FAILED" : "PAYMENT_GATEWAY_ERROR",
-            message: isAuthError
-              ? "Razorpay authentication failed"
-              : (rzpData?.error?.description || "Payment service error"),
+            code: errorCode,
+            message: errorMessage,
             http_status: rzpRes.status,
+            razorpay_error_code: rzpData?.error?.code || undefined,
             upstream_error: rzpData?.error?.description || undefined,
           }),
           {
-            status: isAuthError ? 502 : rzpRes.status,
+            status: clientStatus,
             headers: {
               ...corsHeaders,
               "Content-Type": "application/json",
