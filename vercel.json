@@ -1,7 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "cleanUrls": true,
-  "trailingSlash": false,
   "rewrites": [
     { "source": "/health", "destination": "https://vxcqywbycvasmjngolps.supabase.co/functions/v1/api/health" },
     { "source": "/api/health", "destination": "https://vxcqywbycvasmjngolps.supabase.co/functions/v1/api/health" },
@@ -9,6 +7,6 @@
     { "source": "/api/:match*", "destination": "https://vxcqywbycvasmjngolps.supabase.co/functions/v1/api/:match*" },
     { "source": "/admin/(.*)", "destination": "/admin/index.html" },
     { "source": "/admin", "destination": "/admin/index.html" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/:match*", "destination": "/index.html" }
   ]
 }
