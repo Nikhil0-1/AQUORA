@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Droplets, ShoppingBag, ShieldCheck } from 'lucide-react';
+import { Droplets, ShoppingBag, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
+import { publicApi } from '../api';
 
 interface Props {
   cartCount: number;
@@ -8,6 +9,22 @@ interface Props {
 }
 
 export function Navbar({ cartCount, onOpenCart }: Props) {
+  const [isBackendOnline, setIsBackendOnline] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const check = async () => {
+      const ok = await publicApi.checkBackendConnection();
+      if (mounted) setIsBackendOnline(ok);
+    };
+    check();
+    const interval = setInterval(check, 10000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
   return (
     <header className="sticky top-0 z-40 w-full bg-[#050B14]/85 backdrop-blur-xl border-b border-[#1E2C44]/80">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
@@ -36,9 +53,18 @@ export function Navbar({ cartCount, onOpenCart }: Props) {
 
         {/* Right CTA / Cart */}
         <div className="flex items-center gap-4">
-          <div className="hidden sm:flex items-center gap-2 bg-[#0A111E] border border-[#1E2C44] px-3.5 py-1.5 rounded-full text-xs text-slate-400">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="font-mono text-slate-200">Station AQ-DM-001 Online</span>
+          <div 
+            className="hidden sm:flex items-center gap-2 bg-[#0A111E] border border-[#1E2C44] px-3.5 py-1.5 rounded-full text-xs text-slate-400"
+            title={isBackendOnline ? 'Connected to live backend service on port 3001' : 'Running in standalone client preview mode. Run "npm run dev:backend" to connect live API.'}
+          >
+            <span className={`w-2 h-2 rounded-full ${isBackendOnline ? 'bg-emerald-400 animate-pulse' : 'bg-cyan-400'}`} />
+            <span className="font-mono text-slate-200">
+              {isBackendOnline === null 
+                ? 'Connecting...' 
+                : isBackendOnline 
+                ? 'Backend Live (3001)' 
+                : 'Standalone Demo Mode'}
+            </span>
           </div>
 
           <button

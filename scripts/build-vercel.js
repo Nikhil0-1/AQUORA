@@ -14,24 +14,22 @@ if (fs.existsSync(outDir)) {
 }
 fs.mkdirSync(outDir, { recursive: true });
 
-// 1. Copy Public Customer Web -> dist/
-const publicWebDist = fs.existsSync(terminalDist) ? terminalDist : path.join(rootDir, 'AQUORA_PUBLIC_WEB', 'dist');
+// 1. Copy Unified Public Web & Admin App -> dist/
+const aquoraWebDist = path.join(rootDir, 'AQUORA_PUBLIC_WEB', 'dist');
+const publicWebDist = fs.existsSync(aquoraWebDist) ? aquoraWebDist : terminalDist;
 if (fs.existsSync(publicWebDist)) {
   fs.cpSync(publicWebDist, outDir, { recursive: true });
-  console.log(`✓ Public Customer Web App copied to root / (from ${path.relative(rootDir, publicWebDist)})`);
+  console.log(`✓ Unified Web App (Public + Admin) copied to root / (from ${path.relative(rootDir, publicWebDist)})`);
 } else {
   console.warn('⚠️ Public Web dist not found');
 }
 
-// 2. Copy Admin Dashboard -> dist/admin/
-const adminOutDir = path.join(outDir, 'admin');
-const adminSrcDist = fs.existsSync(adminDist) ? adminDist : path.join(rootDir, 'AQUORA_ADMIN_PANEL', 'frontend', 'dist');
-if (fs.existsSync(adminSrcDist)) {
+// 2. Fallback legacy standalone Admin Dashboard if needed
+if (!fs.existsSync(path.join(outDir, 'index.html')) && fs.existsSync(adminDist)) {
+  const adminOutDir = path.join(outDir, 'admin');
   fs.mkdirSync(adminOutDir, { recursive: true });
-  fs.cpSync(adminSrcDist, adminOutDir, { recursive: true });
-  console.log(`✓ Admin Dashboard copied to /admin (from ${path.relative(rootDir, adminSrcDist)})`);
-} else {
-  console.warn('⚠️ Admin Dashboard dist not found');
+  fs.cpSync(adminDist, adminOutDir, { recursive: true });
+  console.log(`✓ Standalone Admin Dashboard copied to /admin (from ${path.relative(rootDir, adminDist)})`);
 }
 
 console.log('✨ Unified Vercel production build ready at dist/');
