@@ -34,11 +34,28 @@ bool ApiClient::fetchProducts(std::vector<ProductItem>& outProducts) {
         item.channelId = p["channel_id"] | 1;
         item.volumeMl = p["volume_ml"] | 100;
 
-        item.availableVolumes.push_back(50);
-        item.availableVolumes.push_back(100);
-        item.availableVolumes.push_back(150);
-        item.availableVolumes.push_back(250);
-        item.availableVolumes.push_back(500);
+        if (p.containsKey("available_volumes") && p["available_volumes"].is<JsonArray>()) {
+            for (int v : p["available_volumes"].as<JsonArray>()) {
+                item.availableVolumes.push_back(v);
+            }
+        } else if (p.containsKey("variants") && p["variants"].is<JsonArray>()) {
+            for (JsonObject varObj : p["variants"].as<JsonArray>()) {
+                int v = varObj["volume_ml"] | varObj["volume"] | 0;
+                if (v > 0) item.availableVolumes.push_back(v);
+            }
+        }
+        if (item.availableVolumes.empty()) {
+            int baseVol = item.volumeMl > 0 ? item.volumeMl : 100;
+            int defaults[] = { 50, 100, 150, 250, 500 };
+            bool baseIncluded = false;
+            for (int d : defaults) {
+                if (d == baseVol) baseIncluded = true;
+                item.availableVolumes.push_back(d);
+            }
+            if (!baseIncluded && baseVol > 0) {
+                item.availableVolumes.push_back(baseVol);
+            }
+        }
 
         outProducts.push_back(item);
     }
@@ -47,7 +64,7 @@ bool ApiClient::fetchProducts(std::vector<ProductItem>& outProducts) {
     return true;
 }
 
-OrderCreateResult ApiClient::createOrder(const String& productId, int volumeMl, int channelId) {
+OrderCreateResult ApiClient::createOrder(const String& productId, int volumeMl, int channelId, int quantity) {
     OrderCreateResult result = { false, "", "", 0.0f, "" };
     String url = StorageManager::getApiServerUrl() + ENDPOINT_ORDERS;
 
@@ -58,7 +75,7 @@ OrderCreateResult ApiClient::createOrder(const String& productId, int volumeMl, 
     JsonArray items = doc.createNestedArray("items");
     JsonObject item = items.createNestedObject();
     item["product_id"] = productId;
-    item["quantity"] = 1;
+    item["quantity"] = quantity > 0 ? quantity : 1;
     item["volume_ml"] = volumeMl;
     item["channel_id"] = channelId;
 

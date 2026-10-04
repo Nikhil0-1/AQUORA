@@ -308,6 +308,62 @@ export class AquoraApiClient {
       body: JSON.stringify(payload),
     });
   }
+
+  async getAdminJobs(): Promise<any[]> {
+    return this.request<any[]>('/api/v1/admin/jobs');
+  }
+
+  async getMachineTelemetry(machineCode: string = 'AQ-DM-001'): Promise<{
+    machine_code: string;
+    has_telemetry: boolean;
+    telemetry: any;
+  }> {
+    return this.request(`/api/v1/admin/telemetry/${machineCode}`);
+  }
+
+  async getMachineTelemetryHistory(machineCode: string = 'AQ-DM-001', limit: number = 50): Promise<any[]> {
+    return this.request<any[]>(`/api/v1/admin/telemetry/${machineCode}/history?limit=${limit}`);
+  }
+
+  async getCalibrations(machineCode?: string): Promise<any[]> {
+    const q = machineCode ? `?machine=${machineCode}` : '';
+    return this.request<any[]>(`/api/v1/admin/calibrations${q}`);
+  }
+
+  async saveCalibration(payload: {
+    machine_code?: string;
+    channel_number: number;
+    pulse_count?: number;
+    test_volume_ml?: number;
+    measured_volume_ml?: number;
+    calibration_factor: number;
+    operator?: string;
+    is_verified?: boolean;
+  }): Promise<any> {
+    return this.request('/api/v1/admin/calibrations', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async assignMachineChannel(
+    machineId: string,
+    channelNumber: number,
+    payload: {
+      product_id?: string | null;
+      variant_id?: string | null;
+      is_active?: boolean;
+    }
+  ): Promise<any> {
+    return this.request(`/api/v1/admin/machines/${machineId}/channels/${channelNumber}/assign`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getAuditLogs(): Promise<any[]> {
+    return this.request<any[]>('/api/v1/admin/audit-logs');
+  }
 }
 
 export const api = new AquoraApiClient();

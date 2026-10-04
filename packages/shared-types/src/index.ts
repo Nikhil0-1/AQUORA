@@ -225,6 +225,7 @@ export interface DispenseJob {
   completed_at?: string;
   error_code?: string;
   error_message?: string;
+  created_at?: string;
 }
 
 export interface PaymentIntent {

@@ -77,8 +77,9 @@ export interface IDatabase {
   updateOrderStatus(id: string, status: OrderStatus, dispensedAt?: string): Promise<Order | null>;
   updatePaymentStatus(id: string, status: PaymentStatus): Promise<Order | null>;
 
-  // QR Tokens
+  // Dispense Jobs
   createDispenseJob(token: DispenseJob): Promise<DispenseJob>;
+  getDispenseJobs(): Promise<DispenseJob[]>;
   getDispenseJobByString(tokenString: string): Promise<DispenseJob | null>;
   getDispenseJobByOrderId(orderId: string): Promise<DispenseJob | null>;
   updateDispenseJobStatus(id: string, status: DispenseJobStatus, redeemedAt?: string): Promise<DispenseJob | null>;
@@ -86,9 +87,23 @@ export interface IDatabase {
 
   // Telemetry & Logs
   recordMachineTelemetry(telemetry: MachineTelemetry): Promise<void>;
+  getLatestMachineTelemetry(machineCode?: string): Promise<MachineTelemetry | null>;
+  getMachineTelemetryHistory(machineCode?: string, limit?: number): Promise<MachineTelemetry[]>;
   recordMachineEvent(event: Omit<MachineEvent, 'id' | 'created_at'>): Promise<MachineEvent>;
   recordMachineError(error: Omit<MachineError, 'id' | 'created_at'>): Promise<MachineError>;
   getMachineEvents(machineCode?: string, limit?: number): Promise<MachineEvent[]>;
   getMachineErrors(machineCode?: string): Promise<MachineError[]>;
+  saveCalibration(cal: {
+    machine_code: string;
+    channel_number: number;
+    pulse_count: number;
+    test_volume_ml: number;
+    measured_volume_ml: number;
+    calibration_factor: number;
+    operator: string;
+    is_verified?: boolean;
+  }): Promise<any>;
+  getCalibrations(machineCode?: string): Promise<any[]>;
+  recordAuditLog(action: string, actorId: string, details: any): Promise<any>;
   getAuditLogs(): Promise<any[]>;
 }

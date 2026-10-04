@@ -14,7 +14,7 @@
 #define PUMP_INACTIVE_LEVEL         LOW
 
 // Flow Sensor Interrupt Type
-#define FLOW_SENSOR_TRIGGER_MODE    FALLING
+#define FLOW_SENSOR_TRIGGER_MODE    RISING
 
 // Emergency Stop Trigger Mode
 #define ESTOP_TRIGGER_MODE          FALLING

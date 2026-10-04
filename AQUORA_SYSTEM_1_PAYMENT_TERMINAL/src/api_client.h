@@ -45,7 +45,7 @@ struct OrderStatusResult {
 class ApiClient {
 public:
     static bool fetchProducts(std::vector<ProductItem>& outProducts);
-    static OrderCreateResult createOrder(const String& productId, int volumeMl, int channelId);
+    static OrderCreateResult createOrder(const String& productId, int volumeMl, int channelId, int quantity = 1);
     static PaymentIntentResult createPayment(const String& orderId);
     static OrderStatusResult checkOrderStatus(const String& orderId);
 };

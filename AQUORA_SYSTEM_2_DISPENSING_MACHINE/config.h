@@ -9,9 +9,13 @@
 #include "secrets.h.example"
 #endif
 
-// ==============================================================================
-// AQUORA System 2 — Central Machine Configuration
-// ==============================================================================
+// Wi-Fi defaults from secrets
+#ifndef WIFI_SSID_DEFAULT
+#define WIFI_SSID_DEFAULT           AQUORA_WIFI_SSID
+#endif
+#ifndef WIFI_PASSWORD_DEFAULT
+#define WIFI_PASSWORD_DEFAULT       AQUORA_WIFI_PASSWORD
+#endif
 
 // 1. Identity
 #define AQUORA_MACHINE_ID       "AQ-DM-001"
@@ -27,12 +31,12 @@
 #define TELEMETRY_INTERVAL_MS   10000
 #define PROGRESS_REPORT_MS      250
 
-// 4. Default Flow Calibration (Pulses per Milliliter)
-#define DEFAULT_PULSES_PER_ML_CH1   0.450f
-#define DEFAULT_PULSES_PER_ML_CH2   0.380f
-#define DEFAULT_PULSES_PER_ML_CH3   0.450f
-#define DEFAULT_PULSES_PER_ML_CH4   0.420f
-#define DEFAULT_PULSES_PER_ML_CH5   0.450f
+// 4. Default Flow Calibration (Pulses per Milliliter - Baseline: 10.0 pulses/ml)
+#define DEFAULT_PULSES_PER_ML_CH1   10.0f
+#define DEFAULT_PULSES_PER_ML_CH2   10.0f
+#define DEFAULT_PULSES_PER_ML_CH3   10.0f
+#define DEFAULT_PULSES_PER_ML_CH4   10.0f
+#define DEFAULT_PULSES_PER_ML_CH5   10.0f
 
 // 5. Watchdog Configuration
 #define WATCHDOG_TIMEOUT_SEC    10

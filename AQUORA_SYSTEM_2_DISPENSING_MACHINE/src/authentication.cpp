@@ -2,6 +2,7 @@
 #include "https_client.h"
 #include "storage_manager.h"
 #include "logger.h"
+#include "../config.h"
 #include <ArduinoJson.h>
 
 static const char* TAG = "Auth";
@@ -15,7 +16,7 @@ bool MachineAuth::authenticate() {
 
     StaticJsonDocument<512> doc;
     doc["machine_id"] = StorageManager::getMachineCode();
-    doc["api_key"] = "dm_sec_demo_123456789";
+    doc["api_key"] = AQUORA_MACHINE_SECRET;
 
     String body;
     serializeJson(doc, body);

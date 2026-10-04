@@ -9,6 +9,10 @@ public:
     static void reset();
     static void selectProduct(const ProductItem& product);
     static void selectVolume(int volumeMl);
+    static void setQuantity(int qty);
+    static void incrementQuantity();
+    static void decrementQuantity();
+    static int getQuantity();
     static const ProductItem& getSelectedProduct();
     static int getSelectedVolume();
     static float getCalculatedPrice();
@@ -20,6 +24,7 @@ public:
 private:
     static ProductItem selectedProduct;
     static int selectedVolumeMl;
+    static int selectedQuantity;
     static String currentOrderId;
     static String currentOrderNumber;
     static float finalAmount;

@@ -26,6 +26,7 @@
 
 static const char* TAG = "Main";
 static unsigned long lastJobPoll = 0;
+static unsigned long lastAuthAttempt = 0;
 
 void setup() {
     // 1. Serial Logger with required startup banner (Requirement 59)
@@ -105,18 +106,21 @@ void loop() {
         case STATE_CONNECTING_WIFI:
             if (WifiManager::isConnected()) {
                 Serial.println("Authenticating machine...");
+                lastAuthAttempt = 0;
                 MachineState::setState(STATE_AUTHENTICATING);
             }
             break;
 
         case STATE_AUTHENTICATING:
-            if (MachineAuth::authenticate()) {
-                Serial.println("READY\n");
-                MachineState::setState(STATE_IDLE);
-                TelemetryManager::sendHeartbeat();
-            } else {
-                Logger::warn(TAG, "Authentication retry in 5 seconds...");
-                delay(5000);
+            if (millis() - lastAuthAttempt >= 5000) {
+                lastAuthAttempt = millis();
+                if (MachineAuth::authenticate()) {
+                    Serial.println("READY\n");
+                    MachineState::setState(STATE_IDLE);
+                    TelemetryManager::sendHeartbeat();
+                } else {
+                    Logger::warn(TAG, "Authentication failed. Retrying in 5 seconds...");
+                }
             }
             break;
 
@@ -148,9 +152,10 @@ void loop() {
         case STATE_SAFE_MODE:
             PumpController::stopAll();
             if (!EmergencyStop::isTriggered()) {
-                Logger::info(TAG, "E-Stop cleared, returning to IDLE state");
+                Logger::info(TAG, "E-Stop physically released. Requiring fresh machine authentication.");
                 EmergencyStop::resetTrigger();
-                MachineState::setState(STATE_IDLE);
+                lastAuthAttempt = 0;
+                MachineState::setState(STATE_AUTHENTICATING);
             }
             break;
 

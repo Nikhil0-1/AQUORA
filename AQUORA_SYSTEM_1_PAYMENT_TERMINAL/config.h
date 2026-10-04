@@ -9,9 +9,13 @@
 #include "secrets.h.example"
 #endif
 
-// ==============================================================================
-// AQUORA System 1 — Central Terminal Configuration
-// ==============================================================================
+// Wi-Fi defaults from secrets
+#ifndef WIFI_SSID_DEFAULT
+#define WIFI_SSID_DEFAULT           AQUORA_WIFI_SSID
+#endif
+#ifndef WIFI_PASSWORD_DEFAULT
+#define WIFI_PASSWORD_DEFAULT       AQUORA_WIFI_PASSWORD
+#endif
 
 // 1. Identity
 #define AQUORA_TERMINAL_ID          "AQ-PT-001"

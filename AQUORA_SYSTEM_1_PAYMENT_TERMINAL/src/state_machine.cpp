@@ -30,6 +30,7 @@ const char* StateMachine::getStateName(TerminalState state) {
         case STATE_READY: return "READY";
         case STATE_SELECTING_PRODUCT: return "SELECTING_PRODUCT";
         case STATE_SELECTING_VOLUME: return "SELECTING_VOLUME";
+        case STATE_SELECTING_QUANTITY: return "SELECTING_QUANTITY";
         case STATE_ORDER_REVIEW: return "ORDER_REVIEW";
         case STATE_PAYMENT_PENDING: return "PAYMENT_PENDING";
         case STATE_PAYMENT_PROCESSING: return "PAYMENT_PROCESSING";

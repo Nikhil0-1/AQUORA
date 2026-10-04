@@ -348,3 +348,172 @@ adminRouter.get('/events', async (req: Request, res: Response) => {
     return res.status(500).json({ message: error.message });
   }
 });
+
+// GET /api/v1/admin/jobs (Dispense Jobs)
+adminRouter.get('/jobs', async (_req: Request, res: Response) => {
+  try {
+    const jobs = await db.getDispenseJobs();
+    return res.json(
+      jobs.sort(
+        (a, b) => new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime()
+      )
+    );
+  } catch (error: any) {
+    return res.status(500).json({ message: error.message });
+  }
+});
+
+// GET /api/v1/admin/telemetry/:machineCode (Real hardware telemetry - NO FAKE DATA)
+adminRouter.get('/telemetry/:machineCode', async (req: Request, res: Response) => {
+  try {
+    const machineCode = req.params.machineCode;
+    const telemetry = await db.getLatestMachineTelemetry(machineCode);
+    return res.json({
+      machine_code: machineCode,
+      has_telemetry: telemetry !== null,
+      telemetry: telemetry,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ message: error.message });
+  }
+});
+
+// GET /api/v1/admin/telemetry/:machineCode/history
+adminRouter.get('/telemetry/:machineCode/history', async (req: Request, res: Response) => {
+  try {
+    const machineCode = req.params.machineCode;
+    const limit = Number(req.query.limit || 50);
+    const history = await db.getMachineTelemetryHistory(machineCode, limit);
+    return res.json(history);
+  } catch (error: any) {
+    return res.status(500).json({ message: error.message });
+  }
+});
+
+// GET /api/v1/admin/calibrations
+adminRouter.get('/calibrations', async (req: Request, res: Response) => {
+  try {
+    const machineCode = req.query.machine as string | undefined;
+    const calibrations = await db.getCalibrations(machineCode);
+    return res.json(calibrations);
+  } catch (error: any) {
+    return res.status(500).json({ message: error.message });
+  }
+});
+
+// POST /api/v1/admin/calibrations
+adminRouter.post('/calibrations', async (req: Request, res: Response) => {
+  try {
+    const {
+      machine_code = 'AQ-DM-001',
+      channel_number,
+      pulse_count,
+      test_volume_ml,
+      measured_volume_ml,
+      calibration_factor,
+      operator = 'ADMIN',
+      is_verified = false,
+    } = req.body;
+
+    const chNum = Number(channel_number);
+    if (!chNum || chNum < 1 || chNum > 5) {
+      return res.status(400).json({ message: 'channel_number must be between 1 and 5' });
+    }
+
+    const factor = Number(calibration_factor);
+    if (isNaN(factor) || factor <= 0 || factor > 200) {
+      return res
+        .status(400)
+        .json({ message: 'calibration_factor must be a positive number within safe range (0 - 200 pulses/ml)' });
+    }
+
+    const saved = await db.saveCalibration({
+      machine_code,
+      channel_number: chNum,
+      pulse_count: Number(pulse_count || 1000),
+      test_volume_ml: Number(test_volume_ml || 100),
+      measured_volume_ml: Number(measured_volume_ml || 100),
+      calibration_factor: factor,
+      operator,
+      is_verified: Boolean(is_verified),
+    });
+
+    return res.status(201).json(saved);
+  } catch (error: any) {
+    return res.status(400).json({ message: error.message });
+  }
+});
+
+// POST /api/v1/admin/machines/:id/channels/:ch/assign (Product Variant -> Machine -> Channel Assignment)
+adminRouter.post('/machines/:id/channels/:ch/assign', async (req: Request, res: Response) => {
+  try {
+    const machineId = req.params.id;
+    const channelNumber = parseInt(req.params.ch, 10);
+    const { product_id, variant_id, is_active = true } = req.body;
+
+    if (!channelNumber || channelNumber < 1 || channelNumber > 5) {
+      return res.status(400).json({ message: 'Channel number must be between 1 and 5' });
+    }
+
+    const machines = await db.getMachines();
+    const machine = machines.find((m) => m.id === machineId || m.machine_code === machineId);
+    if (!machine) {
+      return res.status(404).json({ message: 'Machine not found' });
+    }
+
+    let productName = 'Unassigned';
+    if (product_id) {
+      const product = await db.getProductById(product_id);
+      if (!product) {
+        return res.status(404).json({ message: 'Product not found' });
+      }
+      productName = product.name;
+    }
+
+    // Check duplicate channel assignments on same machine
+    if (product_id) {
+      const conflict = machine.channels.find(
+        (c) => c.channel_number !== channelNumber && c.product_id === product_id && c.is_active
+      );
+      if (conflict) {
+        return res.status(409).json({
+          message: `Product is already assigned to Channel ${conflict.channel_number} on this machine. Please unassign or change channel.`,
+        });
+      }
+    }
+
+    const updated = await db.updateMachineChannel(machine.id, channelNumber, {
+      product_id: product_id || null,
+      is_active: Boolean(is_active),
+    });
+
+    await db.recordAuditLog('ASSIGN_CHANNEL', 'ADMIN', {
+      machine_code: machine.machine_code,
+      channel_number: channelNumber,
+      product_id,
+      product_name: productName,
+      variant_id,
+      is_active,
+    });
+
+    return res.json({
+      success: true,
+      channel: updated,
+      machine_code: machine.machine_code,
+      product_name: productName,
+    });
+  } catch (error: any) {
+    return res.status(400).json({ message: error.message });
+  }
+});
+
+// GET /api/v1/admin/audit-logs
+adminRouter.get('/audit-logs', async (_req: Request, res: Response) => {
+  try {
+    const logs = await db.getAuditLogs();
+    return res.json(logs);
+  } catch (error: any) {
+    return res.status(500).json({ message: error.message });
+  }
+});
+

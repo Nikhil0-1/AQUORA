@@ -32,6 +32,7 @@ export class MemoryDatabase implements IDatabase {
   private auditLogs: any[] = [];
   private inventoryLogs: any[] = [];
   private adminUsers: any[] = [];
+  private calibrations: any[] = [];
 
   constructor() {
     this.seed();
@@ -278,6 +279,31 @@ export class MemoryDatabase implements IDatabase {
         pump_mode: 'FLOW_SENSOR',
         calibration_factor: 4.7,
         min_flow_rate_ml_s: 2.5,
+      },
+    ];
+
+    // 6. Calibrations (Initial server-side configuration, marked CONFIGURED / NOT PHYSICALLY VERIFIED)
+    this.calibrations = [1, 2, 3, 4, 5].map((ch) => ({
+      id: `cal-seed-ch${ch}`,
+      machine_code: 'AQ-DM-001',
+      channel_number: ch,
+      pulse_count: 1000,
+      test_volume_ml: 100,
+      measured_volume_ml: 100,
+      calibration_factor: 10.0,
+      operator: 'SYSTEM_DEFAULT',
+      is_verified: false,
+      created_at: new Date().toISOString(),
+    }));
+
+    // 7. Initial Audit Log
+    this.auditLogs = [
+      {
+        id: 'audit-init-1',
+        action: 'SYSTEM_BOOT',
+        actor_id: 'SYSTEM',
+        details: { message: 'AQUORA Master Controller backend initialized' },
+        created_at: new Date().toISOString(),
       },
     ];
   }
@@ -683,10 +709,13 @@ export class MemoryDatabase implements IDatabase {
     return JSON.parse(JSON.stringify(ord));
   }
 
-  // QR Tokens
+  // Dispense Jobs
   async createDispenseJob(token: DispenseJob): Promise<DispenseJob> {
     this.dispenseJobs.push(token);
     return JSON.parse(JSON.stringify(token));
+  }
+  async getDispenseJobs(): Promise<DispenseJob[]> {
+    return JSON.parse(JSON.stringify(this.dispenseJobs));
   }
   async getDispenseJobByString(tokenString: string): Promise<DispenseJob | null> {
     const t = this.dispenseJobs.find((tok) => tok.id === tokenString);
@@ -716,6 +745,22 @@ export class MemoryDatabase implements IDatabase {
   async recordMachineTelemetry(tel: MachineTelemetry): Promise<void> {
     this.telemetry.unshift(tel);
     if (this.telemetry.length > 500) this.telemetry.pop();
+  }
+  async getLatestMachineTelemetry(machineCode?: string): Promise<MachineTelemetry | null> {
+    const list = machineCode
+      ? this.telemetry.filter(
+          (t) => (t as any).machine_id === machineCode || (t as any).machine_code === machineCode
+        )
+      : this.telemetry;
+    return list.length > 0 ? JSON.parse(JSON.stringify(list[0])) : null;
+  }
+  async getMachineTelemetryHistory(machineCode?: string, limit = 50): Promise<MachineTelemetry[]> {
+    const list = machineCode
+      ? this.telemetry.filter(
+          (t) => (t as any).machine_id === machineCode || (t as any).machine_code === machineCode
+        )
+      : this.telemetry;
+    return JSON.parse(JSON.stringify(list.slice(0, limit)));
   }
   async recordMachineEvent(
     event: Omit<MachineEvent, 'id' | 'created_at'>
@@ -753,6 +798,63 @@ export class MemoryDatabase implements IDatabase {
       list = list.filter((e) => e.machine_code === machineCode);
     }
     return JSON.parse(JSON.stringify(list));
+  }
+  async saveCalibration(cal: {
+    machine_code: string;
+    channel_number: number;
+    pulse_count: number;
+    test_volume_ml: number;
+    measured_volume_ml: number;
+    calibration_factor: number;
+    operator: string;
+    is_verified?: boolean;
+  }): Promise<any> {
+    const entry = {
+      id: uuidv4(),
+      ...cal,
+      is_verified: cal.is_verified ?? false,
+      created_at: new Date().toISOString(),
+    };
+    this.calibrations.unshift(entry);
+
+    // Synchronize machine channel calibration factor
+    const targetMachine = this.machines.find(
+      (m) => m.machine_code === cal.machine_code || m.id === cal.machine_code
+    );
+    if (targetMachine) {
+      const ch = targetMachine.channels.find((c) => c.channel_number === cal.channel_number);
+      if (ch) {
+        ch.calibration_factor = cal.calibration_factor;
+      }
+    }
+
+    await this.recordAuditLog('UPDATE_CALIBRATION', cal.operator || 'ADMIN', {
+      machine: cal.machine_code,
+      channel: cal.channel_number,
+      calibration_factor: cal.calibration_factor,
+      is_verified: entry.is_verified,
+    });
+
+    return JSON.parse(JSON.stringify(entry));
+  }
+  async getCalibrations(machineCode?: string): Promise<any[]> {
+    let list = this.calibrations;
+    if (machineCode) {
+      list = list.filter((c) => c.machine_code === machineCode);
+    }
+    return JSON.parse(JSON.stringify(list));
+  }
+  async recordAuditLog(action: string, actorId: string, details: any): Promise<any> {
+    const entry = {
+      id: uuidv4(),
+      action,
+      actor_id: actorId || 'ADMIN',
+      details,
+      created_at: new Date().toISOString(),
+    };
+    this.auditLogs.unshift(entry);
+    if (this.auditLogs.length > 500) this.auditLogs.pop();
+    return JSON.parse(JSON.stringify(entry));
   }
   async getAuditLogs(): Promise<any[]> {
     return JSON.parse(JSON.stringify(this.auditLogs));

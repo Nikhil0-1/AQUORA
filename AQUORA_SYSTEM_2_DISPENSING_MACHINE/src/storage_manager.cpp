@@ -46,7 +46,16 @@ float StorageManager::getCalibrationFactor(int channel) {
     init();
     char key[16];
     snprintf(key, sizeof(key), "cal_ch_%d", channel);
-    return prefs.getFloat(key, DEFAULT_PULSES_PER_ML_CH1);
+    float defaultFactor = DEFAULT_PULSES_PER_ML_CH1;
+    switch (channel) {
+        case 1: defaultFactor = DEFAULT_PULSES_PER_ML_CH1; break;
+        case 2: defaultFactor = DEFAULT_PULSES_PER_ML_CH2; break;
+        case 3: defaultFactor = DEFAULT_PULSES_PER_ML_CH3; break;
+        case 4: defaultFactor = DEFAULT_PULSES_PER_ML_CH4; break;
+        case 5: defaultFactor = DEFAULT_PULSES_PER_ML_CH5; break;
+        default: defaultFactor = DEFAULT_PULSES_PER_ML_CH1; break;
+    }
+    return prefs.getFloat(key, defaultFactor);
 }
 
 void StorageManager::setCalibrationFactor(int channel, float factor) {
@@ -86,12 +95,12 @@ void StorageManager::markJobProcessed(const String& jobId) {
 
 String StorageManager::getWifiSSID() {
     init();
-    return prefs.getString("wifi_ssid", "AQUORA_SECURE_WIFI");
+    return prefs.getString("wifi_ssid", WIFI_SSID_DEFAULT);
 }
 
 String StorageManager::getWifiPassword() {
     init();
-    return prefs.getString("wifi_pass", "VendingSecureKey2026");
+    return prefs.getString("wifi_pass", WIFI_PASSWORD_DEFAULT);
 }
 
 String StorageManager::getApiServerUrl() {

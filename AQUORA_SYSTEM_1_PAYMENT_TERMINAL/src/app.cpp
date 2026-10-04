@@ -20,6 +20,9 @@ static const char* TAG = "App";
 unsigned long Application::lastSessionCheck = 0;
 unsigned long Application::lastHeartbeat = 0;
 static std::vector<ProductItem> cachedProducts;
+static TerminalState lastRenderedState = STATE_BOOT;
+static unsigned long lastCatalogFetchAttempt = 0;
+static bool printedReceiptForCurrentOrder = false;
 
 void Application::setup() {
     // 1. Logger
@@ -46,7 +49,8 @@ void Application::setup() {
     PrinterManager::init();
     #endif
 
-    // 6. Non-blocking WiFi
+    // 6. Non-blocking WiFi & Initial Screen
+    UiManager::showWifiConnectingScreen();
     StateMachine::setState(STATE_CONNECTING_WIFI);
     WifiManager::init();
 
@@ -60,137 +64,219 @@ void Application::loop() {
     // Feed hardware watchdog every iteration
     WatchdogManager::feed();
 
-    // Update non-blocking managers
+    // Update non-blocking background managers
     WifiManager::update();
     LvglManager::update();
     PaymentManager::update();
     RealtimeManager::update();
 
-    TerminalState state = StateMachine::getState();
+    TerminalState currentState = StateMachine::getState();
 
-    // State actions
-    switch (state) {
+    // Handle WiFi connectivity loss
+    if (!WifiManager::isConnected() && currentState != STATE_CONNECTING_WIFI && currentState != STATE_BOOT) {
+        if (currentState != STATE_OFFLINE) {
+            Logger::warn(TAG, "WiFi connection dropped, entering STATE_OFFLINE");
+            StateMachine::setState(STATE_OFFLINE);
+            UiManager::showNetworkErrorScreen();
+            lastRenderedState = STATE_OFFLINE;
+        }
+        return;
+    } else if (WifiManager::isConnected() && currentState == STATE_OFFLINE) {
+        Logger::info(TAG, "WiFi reconnected, reloading configuration");
+        StateMachine::setState(STATE_LOADING_CONFIG);
+    }
+
+    // State machine logic
+    switch (currentState) {
         case STATE_CONNECTING_WIFI:
             if (WifiManager::isConnected()) {
+                Logger::info(TAG, "WiFi connected! IP: %s", WifiManager::getIPAddress().c_str());
                 StateMachine::setState(STATE_LOADING_CONFIG);
             }
             break;
 
         case STATE_LOADING_CONFIG:
-            Logger::info(TAG, "Fetching product catalog from backend...");
-            if (ApiClient::fetchProducts(cachedProducts)) {
-                StateMachine::setState(STATE_READY);
-                UiManager::showWelcomeScreen();
-            } else {
-                Logger::warn(TAG, "Retrying product fetch in 3 seconds...");
-                delay(3000);
+            if (millis() - lastCatalogFetchAttempt >= 3000) {
+                lastCatalogFetchAttempt = millis();
+                Logger::info(TAG, "Fetching product catalog from backend: %s...", StorageManager::getApiServerUrl().c_str());
+                if (ApiClient::fetchProducts(cachedProducts)) {
+                    Logger::info(TAG, "Catalog loaded successfully (%d products)", cachedProducts.size());
+                    StateMachine::setState(STATE_READY);
+                } else {
+                    Logger::warn(TAG, "Failed to load product catalog, will retry in 3s");
+                    UiManager::showNetworkErrorScreen();
+                    lastRenderedState = STATE_OFFLINE;
+                }
             }
             break;
 
         case STATE_READY:
-            // Idle on welcome screen
+            if (lastRenderedState != STATE_READY) {
+                OrderManager::reset();
+                RealtimeManager::reset();
+                PaymentManager::cancel();
+                printedReceiptForCurrentOrder = false;
+                UiManager::showWelcomeScreen();
+                lastRenderedState = STATE_READY;
+                lastSessionCheck = millis();
+            }
             break;
 
         case STATE_SELECTING_PRODUCT:
-            UiManager::showProductSelectionScreen(cachedProducts);
-            StateMachine::setState(STATE_SELECTING_VOLUME);
+            if (lastRenderedState != STATE_SELECTING_PRODUCT) {
+                UiManager::showProductSelectionScreen(cachedProducts);
+                lastRenderedState = STATE_SELECTING_PRODUCT;
+                lastSessionCheck = millis();
+            }
             break;
 
         case STATE_SELECTING_VOLUME:
-            // Displayed by UI event callback
+            if (lastRenderedState != STATE_SELECTING_VOLUME) {
+                const ProductItem& prod = OrderManager::getSelectedProduct();
+                UiManager::showVolumeSelectionScreen(prod.availableVolumes);
+                lastRenderedState = STATE_SELECTING_VOLUME;
+                lastSessionCheck = millis();
+            }
+            break;
+
+        case STATE_SELECTING_QUANTITY:
+            if (lastRenderedState != STATE_SELECTING_QUANTITY) {
+                UiManager::showQuantityScreen();
+                lastRenderedState = STATE_SELECTING_QUANTITY;
+                lastSessionCheck = millis();
+            }
             break;
 
         case STATE_ORDER_REVIEW:
-            UiManager::showOrderSummaryScreen();
-            break;
-
-        case STATE_PAYMENT_PENDING: {
-            const ProductItem& prod = OrderManager::getSelectedProduct();
-            int vol = OrderManager::getSelectedVolume();
-            OrderCreateResult orderRes = ApiClient::createOrder(prod.id, vol, prod.channelId);
-
-            if (orderRes.success) {
-                OrderManager::setCreatedOrder(orderRes.orderId, orderRes.orderNumber, orderRes.amount);
-                if (PaymentManager::startPayment(orderRes.orderId)) {
-                    UiManager::showPaymentQrScreen(
-                        PaymentManager::getQrPayload(),
-                        orderRes.orderNumber,
-                        orderRes.amount
-                    );
-                    RealtimeManager::subscribeOrder(orderRes.orderId);
-                } else {
-                    StateMachine::setState(STATE_PAYMENT_FAILED);
-                }
-            } else {
-                StateMachine::setState(STATE_PAYMENT_FAILED);
+            if (lastRenderedState != STATE_ORDER_REVIEW) {
+                UiManager::showCartScreen();
+                lastRenderedState = STATE_ORDER_REVIEW;
+                lastSessionCheck = millis();
             }
             break;
-        }
+
+        case STATE_PAYMENT_PENDING:
+            if (lastRenderedState != STATE_PAYMENT_PENDING) {
+                const ProductItem& prod = OrderManager::getSelectedProduct();
+                int vol = OrderManager::getSelectedVolume();
+                int qty = OrderManager::getQuantity();
+                
+                UiManager::showPaymentProcessingScreen();
+
+                Logger::info(TAG, "Creating backend order: prod=%s, vol=%dml, qty=%d, ch=%d",
+                    prod.id.c_str(), vol, qty, prod.channelId);
+                OrderCreateResult orderRes = ApiClient::createOrder(prod.id, vol, prod.channelId, qty);
+
+                if (orderRes.success) {
+                    OrderManager::setCreatedOrder(orderRes.orderId, orderRes.orderNumber, orderRes.amount);
+                    if (PaymentManager::startPayment(orderRes.orderId)) {
+                        UiManager::showPaymentQrScreen(
+                            PaymentManager::getQrPayload(),
+                            orderRes.orderNumber,
+                            orderRes.amount
+                        );
+                        RealtimeManager::subscribeOrder(orderRes.orderId);
+                        lastRenderedState = STATE_PAYMENT_PENDING;
+                    } else {
+                        Logger::error(TAG, "Payment initialization failed");
+                        StateMachine::setState(STATE_PAYMENT_FAILED);
+                    }
+                } else {
+                    Logger::error(TAG, "Order creation failed: %s", orderRes.error.c_str());
+                    StateMachine::setState(STATE_PAYMENT_FAILED);
+                }
+                lastSessionCheck = millis();
+            }
+            break;
+
+        case STATE_PAYMENT_PROCESSING:
+            if (lastRenderedState != STATE_PAYMENT_PROCESSING) {
+                UiManager::showPaymentProcessingScreen();
+                lastRenderedState = STATE_PAYMENT_PROCESSING;
+            }
+            break;
 
         case STATE_PAYMENT_SUCCESS:
-            Logger::info(TAG, "Payment confirmed. Transitioning to QUEUED for machine AQ-DM-001");
-            StateMachine::setState(STATE_QUEUED);
+            if (lastRenderedState != STATE_PAYMENT_SUCCESS) {
+                UiManager::showPaymentSuccessScreen();
+                lastRenderedState = STATE_PAYMENT_SUCCESS;
+                UiManager::startAutoReturnTimer(2000);
+            } else if (UiManager::isAutoReturnExpired()) {
+                Logger::info(TAG, "Payment confirmed. Transitioning to QUEUED for dispenser %s",
+                    StorageManager::getAssignedDispenserCode().c_str());
+                StateMachine::setState(STATE_QUEUED);
+            }
             break;
 
         case STATE_QUEUED:
         case STATE_DISPENSING: {
             const DispenseProgressData& p = RealtimeManager::getProgress();
             const ProductItem& prod = OrderManager::getSelectedProduct();
-            UiManager::showDispensingScreen(prod.name, OrderManager::getSelectedVolume(), p.dispensedMl, p.percentage);
+            if (lastRenderedState != STATE_QUEUED && lastRenderedState != STATE_DISPENSING) {
+                UiManager::showDispensingScreen(prod.name, OrderManager::getSelectedVolume(), p.dispensedMl, p.percentage);
+                lastRenderedState = currentState;
+            } else {
+                UiManager::updateDispensingProgress(p.dispensedMl, p.percentage);
+            }
             break;
         }
 
         case STATE_COMPLETED: {
             const ProductItem& prod = OrderManager::getSelectedProduct();
             int vol = OrderManager::getSelectedVolume();
-            UiManager::showCompletionScreen(prod.name, vol);
+            
+            if (lastRenderedState != STATE_COMPLETED) {
+                UiManager::showCompletionScreen(prod.name, vol);
+                UiManager::startAutoReturnTimer(UI_COMPLETION_DISPLAY_MS);
+                lastRenderedState = STATE_COMPLETED;
 
-            #if PRINTER_ENABLED_DEFAULT
-            PrinterManager::printReceipt(
-                OrderManager::getOrderNumber(),
-                prod.name,
-                vol,
-                OrderManager::getAmount()
-            );
-            #endif
-
-            delay(5000);
-            OrderManager::reset();
-            StateMachine::setState(STATE_READY);
-            UiManager::showWelcomeScreen();
+                #if PRINTER_ENABLED_DEFAULT
+                if (!printedReceiptForCurrentOrder) {
+                    PrinterManager::printReceipt(
+                        OrderManager::getOrderNumber(),
+                        prod.name,
+                        vol,
+                        OrderManager::getAmount()
+                    );
+                    printedReceiptForCurrentOrder = true;
+                }
+                #endif
+            } else if (UiManager::isAutoReturnExpired()) {
+                Logger::info(TAG, "Dispense cycle completed. Returning to welcome screen.");
+                StateMachine::setState(STATE_READY);
+            }
             break;
         }
 
         case STATE_PAYMENT_FAILED:
-            UiManager::showErrorScreen("PAYMENT FAILED", "Transaction was declined or timed out.\nPlease try again.");
-            delay(5000);
-            OrderManager::reset();
-            StateMachine::setState(STATE_READY);
-            UiManager::showWelcomeScreen();
+            if (lastRenderedState != STATE_PAYMENT_FAILED) {
+                UiManager::showErrorScreen("PAYMENT FAILED", "Transaction was declined or timed out.\nPlease try again.");
+                UiManager::startAutoReturnTimer(5000);
+                lastRenderedState = STATE_PAYMENT_FAILED;
+            } else if (UiManager::isAutoReturnExpired()) {
+                StateMachine::setState(STATE_READY);
+            }
             break;
 
         case STATE_DISPENSING_FAILED:
-            UiManager::showErrorScreen("DISPENSING ERROR", "Payment: SUCCESS\nDispensing: HARDWARE FAULT\nPlease contact customer support.");
-            delay(7000);
-            OrderManager::reset();
-            StateMachine::setState(STATE_READY);
-            UiManager::showWelcomeScreen();
+            if (lastRenderedState != STATE_DISPENSING_FAILED) {
+                UiManager::showErrorScreen("DISPENSING ERROR", "Payment: SUCCESS\nDispensing: HARDWARE FAULT\nPlease contact customer support.");
+                UiManager::startAutoReturnTimer(7000);
+                lastRenderedState = STATE_DISPENSING_FAILED;
+            } else if (UiManager::isAutoReturnExpired()) {
+                StateMachine::setState(STATE_READY);
+            }
             break;
 
         default:
             break;
     }
 
-    // Session Idle Timeout check (Section 114)
+    // Customer Inactivity / Session Idle Auto-Reset
     if (StateMachine::isCustomerActive()) {
         if (millis() - lastSessionCheck > UI_AUTO_RESET_TIMEOUT_MS) {
-            Logger::warn(TAG, "Customer session timed out due to inactivity");
-            OrderManager::reset();
+            Logger::warn(TAG, "Customer session timed out due to inactivity (%d ms)", UI_AUTO_RESET_TIMEOUT_MS);
             StateMachine::setState(STATE_READY);
-            UiManager::showWelcomeScreen();
-            lastSessionCheck = millis();
         }
-    } else {
-        lastSessionCheck = millis();
     }
 }

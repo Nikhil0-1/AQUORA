@@ -51,12 +51,12 @@ void StorageManager::setApiServerUrl(const String& url) {
 
 String StorageManager::getWifiSSID() {
     init();
-    return preferences.getString("wifi_ssid", "AQUORA_VENDING_WIFI");
+    return preferences.getString("wifi_ssid", WIFI_SSID_DEFAULT);
 }
 
 String StorageManager::getWifiPassword() {
     init();
-    return preferences.getString("wifi_pass", "Vending2026Secure");
+    return preferences.getString("wifi_pass", WIFI_PASSWORD_DEFAULT);
 }
 
 void StorageManager::setWifiCredentials(const String& ssid, const String& password) {
